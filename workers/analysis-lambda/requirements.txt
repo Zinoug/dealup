@@ -1,0 +1,8 @@
+boto3>=1.35,<2.0
+google-genai>=2.3,<3.0
+httpx>=0.28,<1.0
+posthog>=6.0,<7.0
+psycopg[binary]>=3.2,<4.0
+pydantic>=2.10,<3.0
+pydantic-settings>=2.7,<3.0
+sentry-sdk>=2.20,<3.0

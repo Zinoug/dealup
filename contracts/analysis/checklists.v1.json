@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "items": [
+    {"code": "REQUEST_PROOF_OF_PURCHASE", "phase": "BEFORE_MEETING", "categories": ["IPHONE", "MACBOOK"], "label": "Demander la preuve d’achat", "critical": true},
+    {"code": "REQUEST_PARTIAL_SERIAL", "phase": "BEFORE_MEETING", "categories": ["IPHONE", "MACBOOK"], "label": "Demander le numéro de série partiellement masqué", "critical": true},
+    {"code": "CONFIRM_SAFE_TRANSACTION", "phase": "BEFORE_MEETING", "categories": ["IPHONE", "MACBOOK"], "label": "Confirmer un rendez-vous ou un paiement sécurisé", "critical": true},
+    {"code": "NO_ADVANCE_PAYMENT", "phase": "BEFORE_MEETING", "categories": ["IPHONE", "MACBOOK"], "label": "Ne verser aucun acompte avant vérification", "critical": true},
+    {"code": "IPHONE_MATCH_IDENTIFIERS", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Comparer le modèle, le numéro de série et l’IMEI", "critical": true},
+    {"code": "IPHONE_CHECK_ACTIVATION_LOCK", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Vérifier que Localiser et le verrouillage d’activation sont désactivés", "critical": true},
+    {"code": "IPHONE_CHECK_BATTERY", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Contrôler la santé et les cycles de batterie", "critical": true},
+    {"code": "IPHONE_CHECK_PARTS", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Ouvrir l’historique des pièces et réparations", "critical": true},
+    {"code": "IPHONE_TEST_FACE_ID", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Configurer et tester Face ID", "critical": true},
+    {"code": "IPHONE_TEST_DISPLAY", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Tester l’écran, le tactile et la luminosité", "critical": true},
+    {"code": "IPHONE_TEST_CAMERAS_AUDIO", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Tester les caméras, micros et haut-parleurs", "critical": false},
+    {"code": "IPHONE_TEST_NETWORK", "phase": "DURING_MEETING", "categories": ["IPHONE"], "label": "Tester le réseau mobile, le Wi‑Fi et le Bluetooth", "critical": false},
+    {"code": "MACBOOK_MATCH_SERIAL_SPECS", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Comparer le numéro de série, la puce, la RAM et le stockage", "critical": true},
+    {"code": "MACBOOK_CHECK_ACTIVATION_LOCK", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Vérifier Activation Lock et Localiser", "critical": true},
+    {"code": "MACBOOK_CHECK_MDM", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Vérifier l’absence de gestion MDM", "critical": true},
+    {"code": "MACBOOK_CHECK_BATTERY", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Contrôler l’état et les cycles de batterie", "critical": true},
+    {"code": "MACBOOK_TEST_DISPLAY_INPUTS", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Tester écran, clavier et trackpad", "critical": true},
+    {"code": "MACBOOK_TEST_PORTS_CHARGING", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Tester tous les ports et la charge", "critical": false},
+    {"code": "MACBOOK_RUN_DIAGNOSTICS", "phase": "DURING_MEETING", "categories": ["MACBOOK"], "label": "Lancer Apple Diagnostics", "critical": false},
+    {"code": "WITNESS_SIGN_OUT_AND_ERASE", "phase": "BEFORE_PAYMENT", "categories": ["IPHONE", "MACBOOK"], "label": "Voir le vendeur se déconnecter puis effacer l’appareil", "critical": true},
+    {"code": "ACTIVATE_AS_BUYER", "phase": "BEFORE_PAYMENT", "categories": ["IPHONE", "MACBOOK"], "label": "Commencer l’activation avec ton propre compte", "critical": true},
+    {"code": "KEEP_SALE_PROOF", "phase": "BEFORE_PAYMENT", "categories": ["IPHONE", "MACBOOK"], "label": "Conserver une preuve écrite de la vente", "critical": false}
+  ]
+}

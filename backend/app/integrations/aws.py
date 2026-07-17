@@ -1,0 +1,121 @@
+import json
+from typing import Any
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+from app.core.config import Settings
+from app.core.errors import DealUpError
+
+
+class AnalysisInvoker:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def invoke(self, analysis_id: str) -> None:
+        if self.settings.analysis_invoke_mode == "disabled":
+            return
+        try:
+            client = boto3.client("lambda", region_name=self.settings.aws_region)
+            response: dict[str, Any] = client.invoke(
+                FunctionName=self.settings.analysis_lambda_name,
+                InvocationType="Event",
+                Payload=json.dumps({"analysis_id": analysis_id}).encode(),
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise DealUpError(
+                "ANALYSIS_DISPATCH_FAILED",
+                "L’analyse n’a pas pu démarrer. Réessaie.",
+                503,
+            ) from exc
+        if response.get("StatusCode") != 202:
+            raise DealUpError(
+                "ANALYSIS_DISPATCH_FAILED",
+                "L’analyse n’a pas pu démarrer. Réessaie.",
+                503,
+            )
+
+
+class MediaStorage:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def presign_upload(
+        self, object_key: str, content_type: str, size_bytes: int
+    ) -> dict[str, Any]:
+        if not self.settings.media_bucket:
+            raise DealUpError(
+                "MEDIA_NOT_CONFIGURED",
+                "Le stockage des images n’est pas configuré.",
+                503,
+            )
+        try:
+            client = boto3.client("s3", region_name=self.settings.aws_region)
+            return client.generate_presigned_post(
+                Bucket=self.settings.media_bucket,
+                Key=object_key,
+                Fields={"Content-Type": content_type},
+                Conditions=[
+                    {"Content-Type": content_type},
+                    ["content-length-range", 1, size_bytes],
+                ],
+                ExpiresIn=900,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise DealUpError(
+                "MEDIA_PROVIDER_UNAVAILABLE",
+                "L’envoi d’image est temporairement indisponible.",
+                503,
+            ) from exc
+
+    def delete(self, object_key: str) -> None:
+        if not self.settings.media_bucket:
+            return
+        try:
+            boto3.client("s3", region_name=self.settings.aws_region).delete_object(
+                Bucket=self.settings.media_bucket, Key=object_key
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise DealUpError(
+                "MEDIA_PROVIDER_UNAVAILABLE",
+                "Le stockage d’images est temporairement indisponible.",
+                503,
+            ) from exc
+
+    def inspect(self, object_key: str) -> dict[str, Any]:
+        if not self.settings.media_bucket:
+            raise DealUpError(
+                "MEDIA_NOT_CONFIGURED",
+                "Le stockage des images n’est pas configuré.",
+                503,
+            )
+        try:
+            return boto3.client("s3", region_name=self.settings.aws_region).head_object(
+                Bucket=self.settings.media_bucket, Key=object_key
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise DealUpError(
+                "MEDIA_UPLOAD_INCOMPLETE", "L’image n’a pas été reçue.", 409
+            ) from exc
+
+    def presign_read(self, object_key: str, expires_in: int = 900) -> str:
+        if not self.settings.media_bucket:
+            raise DealUpError(
+                "MEDIA_NOT_CONFIGURED",
+                "Le stockage des images n’est pas configuré.",
+                503,
+            )
+        try:
+            return boto3.client(
+                "s3", region_name=self.settings.aws_region
+            ).generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.settings.media_bucket, "Key": object_key},
+                ExpiresIn=expires_in,
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise DealUpError(
+                "MEDIA_PROVIDER_UNAVAILABLE",
+                "L’image est temporairement indisponible.",
+                503,
+            ) from exc

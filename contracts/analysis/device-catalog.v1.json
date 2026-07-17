@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "categories": [
+    {
+      "code": "IPHONE",
+      "label": "iPhone",
+      "supported_range": "iPhone 11 et plus récents, iPhone SE 2 et SE 3",
+      "asset_key": "iphone-family-placeholder",
+      "models": [
+        "iPhone 11 et générations suivantes",
+        "iPhone SE (2e génération)",
+        "iPhone SE (3e génération)"
+      ]
+    },
+    {
+      "code": "MACBOOK",
+      "label": "MacBook",
+      "supported_range": "MacBook Air et MacBook Pro avec puce Apple M1 ou plus récente",
+      "asset_key": "macbook-family-placeholder",
+      "models": [
+        "MacBook Air Apple Silicon M1+",
+        "MacBook Pro Apple Silicon M1+"
+      ]
+    }
+  ],
+  "coming_later": ["iPad", "Apple Watch", "Téléphones Android", "MacBook Intel"]
+}

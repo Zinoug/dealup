@@ -1,0 +1,5 @@
+Analyse le dossier en une seule réponse structurée. Utilise la recherche web pour estimer le marché français actuel.
+Chaque risque doit citer au moins une evidence_ref valide avec un source_type autorisé et un ref présent dans le dossier. Sélectionne uniquement des codes de la taxonomie fournie.
+OTHER est exceptionnel, limité à MEDIUM et ne doit pas devenir l’action principale.
+Propose les cinq sous-scores, les montants, les textes personnalisés, les questions et les codes checklist.
+Le système DealUp recalculera ensuite le score, le verdict, l’économie, le template et les libellés de checklist.
