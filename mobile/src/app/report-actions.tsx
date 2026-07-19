@@ -4,16 +4,13 @@ import { ChevronRight, Copy } from 'lucide-react-native';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, GlassCard, LimeButton } from '@/components/reference-ui';
-import { demoAnalysis, reportFixtures } from '@/data/mock';
-import { useAppStore } from '@/store/app-store';
+import { useAnalysisReport } from '@/hooks/use-analysis-report';
 import { colors, layout } from '@/theme/tokens';
 
 export default function ActionsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { analyses } = useAppStore();
-  const report = analyses.find((item) => item.id === id)
-    ?? Object.values(reportFixtures).find((item) => item.id === id)
-    ?? demoAnalysis;
+  const { report } = useAnalysisReport(id);
+  if (!report) return <DarkSafeScreen variant="focus"><DarkHeader title="Actions" /></DarkSafeScreen>;
   const message = report.primaryAction.type === 'MAKE_OFFER'
     ? report.messages.makeOffer
     : report.primaryAction.type === 'AVOID_LISTING'

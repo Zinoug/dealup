@@ -13,5 +13,5 @@ export const SITE_DESCRIPTION =
 export const NAVIGATION = [
   { href: "/#fonctionnement", label: "Comment ça marche" },
   { href: "/#rapport", label: "Le rapport" },
-  { href: "/appareils-compatibles/", label: "Appareils" },
+  { href: "/#appareils", label: "Appareils" },
 ] as const;

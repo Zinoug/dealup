@@ -15,7 +15,11 @@ from app import models as _models  # noqa: F401
 
 settings = get_settings()
 if settings.sentry_dsn:
-    sentry_sdk.init(dsn=settings.sentry_dsn, environment=settings.app_env)
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        send_default_pii=False,
+    )
 
 
 @asynccontextmanager

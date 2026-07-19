@@ -5,20 +5,20 @@
 Les captures officielles fournies sont conservées dans `official/` :
 
 - `home.webp` — accueil ;
-- `report-overview.webp` — verdict et score ;
-- `report-pricing.webp` — prix et action ;
-- `report-risks.webp` — risques et checklist ;
+- `report-overview.webp` — verdict, score et prix ;
+- `report-pricing.webp` — signaux, action recommandée et checklist ;
+- `report-risks.webp` — preuves à vérifier et avis DealUp ;
 - `seller-response.webp` — ajout du contexte vendeur ;
 - `checklist.webp` — checklist complète ;
 - `actions.webp` — actions disponibles.
 
-Le hero utilise `home.png` et `report-overview.png`. Le showcase interactif utilise
+Le hero utilise `home.webp` et `report-overview.webp`. Le showcase interactif utilise
 les trois captures du rapport. Il ne reconstruit aucun écran en HTML ou CSS.
 
 ## Format attendu
 
 - PNG ou WebP en portrait ;
-- 1179 × 2556 px recommandé, ou tout format au même ratio ;
+- 1206 × 2622 px recommandé, ou tout format au même ratio ;
 - capture brute issue de l’iPhone ou du simulateur iOS ;
 - aucun cadre d’appareil ;
 - aucun fond marketing ;

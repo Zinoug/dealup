@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -20,10 +20,13 @@ class Settings(BaseSettings):
     clerk_jwks_url: str = ""
     clerk_issuer: str = ""
     clerk_audience: str = ""
-    clerk_authorized_parties: list[str] = []
+    clerk_authorized_parties: Annotated[list[str], NoDecode] = []
     auth_disabled: bool = False
 
     aws_region: str = "eu-west-3"
+    aws_access_key_id: str = ""
+    aws_secret_access_key: str = ""
+    aws_session_token: str = ""
     analysis_lambda_name: str = "dealup-analysis"
     analysis_invoke_mode: Literal["aws", "disabled"] = "disabled"
     media_bucket: str = ""
@@ -43,7 +46,7 @@ class Settings(BaseSettings):
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"
     sentry_dsn: str = ""
-    cors_origins: list[str] = []
+    cors_origins: Annotated[list[str], NoDecode] = []
 
     @field_validator("clerk_authorized_parties", "cors_origins", mode="before")
     @classmethod
@@ -57,6 +60,7 @@ class Settings(BaseSettings):
         if self.app_env != "production":
             return self
         required = {
+            "CLERK_SECRET_KEY": self.clerk_secret_key,
             "CLERK_JWKS_URL": self.clerk_jwks_url,
             "PILOTERR_API_KEY": self.piloterr_api_key,
             "REVENUECAT_API_KEY": self.revenuecat_api_key,

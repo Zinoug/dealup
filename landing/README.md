@@ -30,7 +30,9 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 ## Pages indexables
 
 - `/` — présentation complète de DealUp ;
-- `/appareils-compatibles/` — catalogue de compatibilité V1 ;
+- `/support/` — contact support par e-mail ;
+- `/confidentialite/` — politique de confidentialité ;
+- `/conditions/` — conditions d’utilisation ;
 - `/robots.txt` ;
 - `/sitemap.xml` ;
 - `/manifest.webmanifest`.

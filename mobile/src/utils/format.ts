@@ -2,6 +2,7 @@ export function formatEuros(cents: number, showDecimals = false) {
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
     currency: 'EUR',
+    minimumFractionDigits: showDecimals ? 2 : 0,
     maximumFractionDigits: showDecimals ? 2 : 0,
   }).format(cents / 100);
 }

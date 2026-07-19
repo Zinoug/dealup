@@ -13,6 +13,7 @@ class ListingTeaser(BaseModel):
     asking_price_cents: int | None = None
     currency: str = "EUR"
     thumbnail_url: str | None = None
+    preview_photo_urls: list[str] = Field(default_factory=list, max_length=6)
     location: str | None = None
     photo_count: int = 0
     facts: list[str] = Field(default_factory=list)
@@ -80,6 +81,9 @@ class MeResponse(BaseModel):
     id: str
     clerk_user_id: str
     created_at: datetime
+    email: str | None = None
+    display_name: str | None = None
+    auth_provider: str | None = None
     usage: UsageResponse
 
 

@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowRight } from 'lucide-react-native';
 import type { PropsWithChildren, ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppLogo } from '@/components/app-logo';
@@ -21,11 +21,11 @@ export function EntryBrand({ size = 94 }: { size?: number }) {
   return <View style={styles.brand}><AppLogo size={size} elevated /><Text style={styles.wordmark}>Deal<Text style={styles.lime}>Up</Text></Text></View>;
 }
 
-export function EntryPrimaryButton({ label, onPress, icon = <ArrowRight size={21} color={colors.brand900} />, style }: { label: string; onPress: () => void; icon?: ReactNode; style?: StyleProp<ViewStyle> }) {
+export function EntryPrimaryButton({ label, onPress, icon = <ArrowRight size={21} color={colors.brand900} />, loading = false, style }: { label: string; onPress: () => void; icon?: ReactNode; loading?: boolean; style?: StyleProp<ViewStyle> }) {
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed, style]}>
+    <Pressable accessibilityState={{ busy: loading, disabled: loading }} disabled={loading} onPress={onPress} style={({ pressed }) => [styles.buttonShell, pressed && styles.pressed, style]}>
       <LinearGradient colors={['#E4FF57', '#C5F52B', '#9EE61F']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.buttonGradient}>
-        <View style={styles.iconSpacer} /><Text style={styles.buttonText}>{label}</Text><View style={styles.buttonIcon}>{icon}</View>
+        <View style={styles.iconSpacer} /><Text style={styles.buttonText}>{label}</Text><View style={styles.buttonIcon}>{loading ? <ActivityIndicator color={colors.brand900} /> : icon}</View>
       </LinearGradient>
     </Pressable>
   );

@@ -1,56 +1,65 @@
-import json
-import os
+"""Small backend-owned analysis metadata and public device catalog.
+
+Git versions the implementation. These values are persisted only to identify the
+engine configuration that produced an analysis; they do not select files at
+runtime.
+"""
+
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 
-def _contracts_dir() -> Path:
-    configured = os.getenv("DEALUP_CONTRACTS_DIR")
-    candidates = [
-        Path(configured) if configured else None,
-        Path.cwd() / "contracts" / "analysis",
-        Path(__file__).resolve().parents[3] / "contracts" / "analysis",
-        Path(__file__).resolve().parents[2] / "contracts" / "analysis",
-    ]
-    for candidate in candidates:
-        if candidate and (candidate / "manifest.json").is_file():
-            return candidate
-    raise RuntimeError("DealUp analysis contracts are missing")
+ENGINE_CONFIG = {
+    "engine_revision": "2026-07-19",
+    "schema_version": "2.0",
+    "device_catalog_version": "1.0",
+}
 
-
-def _read_json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise RuntimeError(f"Invalid DealUp contract: {path.name}")
-    return value
-
-
-def _versioned(root: Path, stem: str, version: str) -> Path:
-    exact = root / f"{stem}.v{version}.json"
-    return (
-        exact if exact.is_file() else root / f"{stem}.v{version.split('.', 1)[0]}.json"
-    )
+DEVICE_CATALOG: dict[str, Any] = {
+    "version": ENGINE_CONFIG["device_catalog_version"],
+    "categories": [
+        {
+            "code": "IPHONE",
+            "label": "iPhone",
+            "supported_range": "iPhone 11 et plus récents, iPhone SE 2 et SE 3",
+            "asset_key": None,
+            "models": [
+                "iPhone 11 et générations suivantes",
+                "iPhone SE (2e génération)",
+                "iPhone SE (3e génération)",
+            ],
+        },
+        {
+            "code": "MACBOOK",
+            "label": "MacBook",
+            "supported_range": (
+                "MacBook Air et MacBook Pro avec puce Apple M1 ou plus récente"
+            ),
+            "asset_key": None,
+            "models": [
+                "MacBook Air Apple Silicon M1+",
+                "MacBook Pro Apple Silicon M1+",
+            ],
+        },
+    ],
+    "coming_later": ["iPad", "Apple Watch", "Téléphones Android", "MacBook Intel"],
+}
 
 
 @dataclass(frozen=True)
 class AnalysisContract:
-    root: Path
     manifest: dict[str, str]
     device_catalog: dict[str, Any]
 
-    def versions(self) -> dict[str, str]:
-        return dict(self.manifest)
+    @property
+    def engine_revision(self) -> str:
+        return self.manifest["engine_revision"]
 
 
 @lru_cache
 def get_analysis_contract() -> AnalysisContract:
-    root = _contracts_dir()
-    manifest = _read_json(root / "manifest.json")
-    catalog_version = manifest["device_catalog_version"]
     return AnalysisContract(
-        root=root,
-        manifest={str(key): str(value) for key, value in manifest.items()},
-        device_catalog=_read_json(_versioned(root, "device-catalog", catalog_version)),
+        manifest=dict(ENGINE_CONFIG),
+        device_catalog=DEVICE_CATALOG,
     )

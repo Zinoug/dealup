@@ -5,27 +5,68 @@ import psycopg
 from psycopg.rows import dict_row
 
 
+SCALAR_METRIC_KEYS = {
+    "input_tokens",
+    "output_tokens",
+    "thought_tokens",
+    "search_count",
+    "listing_image_count",
+    "private_image_count",
+    "piloterr_duration_ms",
+    "gemini_duration_ms",
+    "total_duration_ms",
+    "theoretical_cost_microusd",
+    "piloterr_cost_microeur",
+}
+
+
+def _metadata_details(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value for key, value in metadata.items() if key not in SCALAR_METRIC_KEYS
+    }
+
+
 @dataclass(frozen=True)
 class AnalysisJob:
     id: str
     user_id: str
     kind: str
-    source_url: str
     purchase_mode: str
-    seller_reply_text: str | None
-    seller_media: list[dict[str, Any]]
-    listing_payload: dict[str, Any] | None
-    normalized_listing: dict[str, Any] | None
+    input_snapshot: dict[str, Any]
+    seller_context: dict[str, Any]
     device_category: str
-    device_profile: dict[str, Any]
     parent_result: dict[str, Any] | None
     model_id: str | None
-    prompt_version: str
-    schema_version: str
-    taxonomy_version: str
-    scoring_version: str
-    checklist_version: str
-    device_catalog_version: str
+    engine_revision: str
+
+    @property
+    def source_url(self) -> str:
+        return str(self.input_snapshot.get("source_url") or "")
+
+    @property
+    def seller_reply_text(self) -> str | None:
+        value = self.seller_context.get("reply_text")
+        return str(value) if value else None
+
+    @property
+    def seller_media(self) -> list[dict[str, Any]]:
+        value = self.seller_context.get("media")
+        return value if isinstance(value, list) else []
+
+    @property
+    def listing_payload(self) -> dict[str, Any] | None:
+        value = self.input_snapshot.get("listing_payload")
+        return value if isinstance(value, dict) else None
+
+    @property
+    def normalized_listing(self) -> dict[str, Any] | None:
+        value = self.input_snapshot.get("normalized_listing")
+        return value if isinstance(value, dict) else None
+
+    @property
+    def device_profile(self) -> dict[str, Any]:
+        value = self.input_snapshot.get("device_profile")
+        return value if isinstance(value, dict) else {}
 
 
 class AnalysisRepository:
@@ -34,8 +75,20 @@ class AnalysisRepository:
             "postgresql+psycopg://", "postgresql://", 1
         )
 
+    def next_pending_id(self) -> str | None:
+        with psycopg.connect(self.database_url) as connection:
+            row = connection.execute(
+                """
+                SELECT id FROM analyses
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        return str(row[0]) if row else None
+
     def reserve(self, analysis_id: str) -> AnalysisJob | None:
-        query = """
+        reserve_query = """
             UPDATE analyses
             SET status = 'processing', started_at = NOW(), updated_at = NOW(),
                 error_code = NULL, error_message = NULL
@@ -44,14 +97,27 @@ class AnalysisRepository:
                 status = 'pending'
                 OR (status = 'processing' AND started_at < NOW() - INTERVAL '15 minutes')
               )
-            RETURNING id, user_id, kind, source_url, purchase_mode,
-                      seller_reply_text, seller_media, listing_payload,
-                      normalized_listing, device_category, device_profile, parent_result,
-                      model_id, prompt_version, schema_version, taxonomy_version,
-                      scoring_version, checklist_version, device_catalog_version
+            RETURNING id
         """
         with psycopg.connect(self.database_url, row_factory=dict_row) as connection:
-            row = connection.execute(query, {"analysis_id": analysis_id}).fetchone()
+            reserved = connection.execute(
+                reserve_query, {"analysis_id": analysis_id}
+            ).fetchone()
+            if reserved is None:
+                connection.commit()
+                return None
+            row = connection.execute(
+                """
+                SELECT child.id, child.user_id, child.kind, child.purchase_mode,
+                       child.input_snapshot, child.seller_context,
+                       child.device_category, parent.result AS parent_result,
+                       child.model_id, child.engine_revision
+                FROM analyses child
+                LEFT JOIN analyses parent ON parent.id = child.parent_analysis_id
+                WHERE child.id = %(analysis_id)s
+                """,
+                {"analysis_id": analysis_id},
+            ).fetchone()
             connection.commit()
         if row is None:
             return None
@@ -74,10 +140,12 @@ class AnalysisRepository:
                 UPDATE analyses
                 SET status = 'completed', candidate_result = %(candidate)s::jsonb,
                     result = %(result)s::jsonb,
-                    provider_metadata = %(metadata)s::jsonb, model_id = %(model_id)s,
-                    model_config = %(model_config)s::jsonb,
-                    listing_payload = %(listing_payload)s::jsonb,
-                    normalized_listing = %(normalized_listing)s::jsonb,
+                    run_metadata = %(run_metadata)s::jsonb, model_id = %(model_id)s,
+                    input_snapshot = COALESCE(input_snapshot, '{}'::jsonb)
+                        || jsonb_build_object(
+                            'listing_payload', %(listing_payload)s::jsonb,
+                            'normalized_listing', %(normalized_listing)s::jsonb
+                        ),
                     template_id = %(template_id)s,
                     input_tokens = %(input_tokens)s,
                     output_tokens = %(output_tokens)s,
@@ -89,9 +157,7 @@ class AnalysisRepository:
                     gemini_duration_ms = %(gemini_duration_ms)s,
                     total_duration_ms = %(total_duration_ms)s,
                     theoretical_cost_microusd = %(theoretical_cost_microusd)s,
-                    billed_cost_microusd = %(billed_cost_microusd)s,
                     piloterr_cost_microeur = %(piloterr_cost_microeur)s,
-                    provider_pricing_version = %(provider_pricing_version)s,
                     completed_at = NOW(), updated_at = NOW()
                 WHERE id = %(analysis_id)s AND status = 'processing'
                 """,
@@ -99,9 +165,10 @@ class AnalysisRepository:
                     "analysis_id": analysis_id,
                     "candidate": psycopg.types.json.Jsonb(candidate),
                     "result": psycopg.types.json.Jsonb(result),
-                    "metadata": psycopg.types.json.Jsonb(metadata),
+                    "run_metadata": psycopg.types.json.Jsonb(
+                        {**_metadata_details(metadata), "model_config": model_config}
+                    ),
                     "model_id": model_id,
-                    "model_config": psycopg.types.json.Jsonb(model_config),
                     "listing_payload": psycopg.types.json.Jsonb(listing_payload),
                     "normalized_listing": psycopg.types.json.Jsonb(normalized_listing),
                     "template_id": result.get("template_id"),
@@ -117,11 +184,7 @@ class AnalysisRepository:
                     "theoretical_cost_microusd": metadata.get(
                         "theoretical_cost_microusd"
                     ),
-                    "billed_cost_microusd": metadata.get("billed_cost_microusd"),
                     "piloterr_cost_microeur": metadata.get("piloterr_cost_microeur"),
-                    "provider_pricing_version": metadata.get(
-                        "provider_pricing_version"
-                    ),
                 },
             )
             connection.commit()
@@ -165,15 +228,36 @@ class AnalysisRepository:
                 )
             connection.commit()
 
-    def fail(self, analysis_id: str, code: str, message: str) -> None:
+    def fail(
+        self,
+        analysis_id: str,
+        code: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        metadata = metadata or {}
         with psycopg.connect(self.database_url, row_factory=dict_row) as connection:
             connection.execute(
                 """
                 UPDATE analyses SET status = 'failed', error_code = %(code)s,
-                    error_message = %(message)s, completed_at = NOW(), updated_at = NOW()
+                    error_message = %(message)s,
+                    run_metadata = COALESCE(run_metadata, '{}'::jsonb)
+                        || %(metadata)s::jsonb,
+                    piloterr_duration_ms = %(piloterr_duration_ms)s,
+                    gemini_duration_ms = %(gemini_duration_ms)s,
+                    total_duration_ms = %(total_duration_ms)s,
+                    completed_at = NOW(), updated_at = NOW()
                 WHERE id = %(analysis_id)s AND status = 'processing'
                 """,
-                {"analysis_id": analysis_id, "code": code, "message": message[:1000]},
+                {
+                    "analysis_id": analysis_id,
+                    "code": code,
+                    "message": message[:1000],
+                    "metadata": psycopg.types.json.Jsonb(_metadata_details(metadata)),
+                    "piloterr_duration_ms": metadata.get("piloterr_duration_ms"),
+                    "gemini_duration_ms": metadata.get("gemini_duration_ms"),
+                    "total_duration_ms": metadata.get("total_duration_ms"),
+                },
             )
             debit = connection.execute(
                 """

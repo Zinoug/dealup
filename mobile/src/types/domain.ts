@@ -37,6 +37,7 @@ export interface ListingTeaser {
   currency?: string;
   thumbnailUrl?: string | null;
   thumbnailMediaId?: string | null;
+  previewPhotoUrls: string[];
   location: string;
   photoCount: number;
   facts: string[];
@@ -105,7 +106,7 @@ export interface AnalysisResult {
   };
   risks: { level: Severity; items: RiskItem[] };
   positiveSignals: { code: string; label: string }[];
-  missingInformation: { code: string; priority: 'BLOCKING' | 'USEFUL'; label: string; question: string }[];
+  missingInformation: { code: string; priority: 'BLOCKING' | 'USEFUL'; label: string; reason: string; question: string; evidence: string[] }[];
   messages: { requestProofs: string; makeOffer: string; decline: string };
   checklist: {
     beforeMeeting: ChecklistItem[];
@@ -133,8 +134,32 @@ export interface CompatibleDevicesCatalog {
 
 export interface Usage {
   plan: PlanId | 'none';
+  active: boolean;
   used: number;
   limit: number;
   topUpRemaining: number;
   renewsLabel: string;
+}
+
+export interface AccountProfile {
+  id: string;
+  clerkUserId: string;
+  email: string | null;
+  displayName: string | null;
+  authProvider: 'email' | 'apple' | 'google' | null;
+  createdAt: string;
+  usage: Usage;
+}
+
+export interface AnalysisSummary {
+  id: string;
+  latestAnalysisId: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  kind: 'initial' | 'reanalysis' | 'refresh';
+  device: DeviceProfile | null;
+  listing: ListingTeaser | null;
+  verdict: AnalysisResult['verdict'] | null;
+  templateId: ReportTemplate | null;
+  createdAt: string;
+  completedAt: string | null;
 }

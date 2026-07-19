@@ -1,15 +1,18 @@
-import { compatibleDevicesCatalog, demoAnalysis, demoListing } from '@/data/mock';
 import type {
+  AccountProfile,
   AnalysisResult,
+  AnalysisSummary,
   CompatibleDevicesCatalog,
   DeviceProfile,
   ListingTeaser,
   PurchaseMode,
+  Usage,
 } from '@/types/domain';
+import { runtime } from '@/services/runtime';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
-const useMocks = process.env.EXPO_PUBLIC_USE_MOCKS !== 'false' || !API_URL;
+const API_URL = runtime.apiUrl;
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
+let tokenProvider: (() => Promise<string | null>) | null = null;
 
 export interface StartAnalysisInput {
   identificationId: string;
@@ -26,11 +29,12 @@ interface UploadPresignResponse {
 
 async function request<T>(path: string, init: RequestInit, token?: string): Promise<T> {
   if (!API_URL) throw new Error('EXPO_PUBLIC_API_URL manque dans le fichier .env.');
+  const bearer = token ?? (tokenProvider ? await tokenProvider() : null);
   const response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
       ...init.headers,
     },
   });
@@ -45,6 +49,24 @@ async function request<T>(path: string, init: RequestInit, token?: string): Prom
   return response.json() as Promise<T>;
 }
 
+function mapListing(raw: Record<string, any>, identificationId: string): ListingTeaser {
+  return {
+    identificationId,
+    sourceUrl: '',
+    title: raw.title,
+    priceCents: raw.asking_price_cents ?? 0,
+    currency: raw.currency,
+    thumbnailUrl: raw.thumbnail_url,
+    thumbnailMediaId: raw.thumbnail_media_id,
+    previewPhotoUrls: raw.thumbnail_url ? [raw.thumbnail_url] : [],
+    location: raw.location ?? '',
+    photoCount: raw.photo_count ?? 0,
+    facts: [],
+    sellerName: 'Vendeur Leboncoin',
+    postedLabel: 'Annonce analysée',
+  };
+}
+
 function mapDevice(value: Record<string, unknown>): DeviceProfile {
   return {
     category: value.category as DeviceProfile['category'],
@@ -55,26 +77,27 @@ function mapDevice(value: Record<string, unknown>): DeviceProfile {
   };
 }
 
+function mapUsage(raw: any): Usage {
+  const periodEnd = raw.included.period_ends_at ? new Date(raw.included.period_ends_at) : null;
+  return {
+    plan: raw.plan,
+    active: raw.entitlement === 'active',
+    used: raw.included.used,
+    limit: raw.included.limit,
+    topUpRemaining: raw.top_up.remaining,
+    renewsLabel: periodEnd
+      ? `Remis à zéro le ${periodEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
+      : 'Aucune formule active',
+  };
+}
+
 function mapReport(raw: Record<string, any>, id: string, createdAt: string, purchaseMode: PurchaseMode): AnalysisResult {
   const listing = raw.listing;
   return {
     id,
     schemaVersion: '2.0',
     templateId: raw.template_id,
-    listing: {
-      identificationId: id,
-      sourceUrl: '',
-      title: listing.title,
-      priceCents: listing.asking_price_cents ?? 0,
-      currency: listing.currency,
-      thumbnailUrl: listing.thumbnail_url,
-      thumbnailMediaId: listing.thumbnail_media_id,
-      location: listing.location ?? '',
-      photoCount: listing.photo_count,
-      facts: [],
-      sellerName: 'Vendeur Leboncoin',
-      postedLabel: 'Annonce analysée',
-    },
+    listing: mapListing(listing, id),
     device: mapDevice(raw.device),
     createdAt,
     purchaseMode,
@@ -125,7 +148,14 @@ function mapReport(raw: Record<string, any>, id: string, createdAt: string, purc
       })),
     },
     positiveSignals: raw.positive_signals,
-    missingInformation: raw.missing_information,
+    missingInformation: raw.missing_information.map((item: any) => ({
+      code: item.code,
+      priority: item.priority,
+      label: item.label,
+      reason: item.reason ?? 'Les éléments fournis ne permettent pas encore de confirmer ce point.',
+      question: item.question,
+      evidence: item.evidence ?? [],
+    })),
     messages: {
       requestProofs: raw.messages.request_proofs,
       makeOffer: raw.messages.make_offer,
@@ -183,13 +213,12 @@ async function uploadPrivateMediaBatch(uris: string[], token?: string): Promise<
 }
 
 export const dealupApi = {
-  get isMock() {
-    return useMocks;
+  setTokenProvider(provider: (() => Promise<string | null>) | null) {
+    tokenProvider = provider;
   },
 
   async compatibleDevices(): Promise<CompatibleDevicesCatalog> {
-    if (useMocks) return compatibleDevicesCatalog;
-    const raw = await request<any>('/v1/catalog/compatible-devices', { method: 'GET' });
+    const raw = await request<any>('/v1/catalog/compatible-devices', { method: 'GET' }, '');
     return {
       version: raw.version,
       categories: raw.categories.map((item: any) => ({
@@ -204,10 +233,6 @@ export const dealupApi = {
   },
 
   async identify(url: string, token?: string): Promise<ListingTeaser> {
-    if (useMocks) {
-      await wait(900);
-      return { ...demoListing, sourceUrl: url };
-    }
     const response = await request<any>(
       '/v1/listings/identify',
       { method: 'POST', body: JSON.stringify({ url }) },
@@ -223,6 +248,7 @@ export const dealupApi = {
       priceCents: response.teaser.asking_price_cents ?? 0,
       currency: response.teaser.currency,
       thumbnailUrl: response.teaser.thumbnail_url,
+      previewPhotoUrls: response.teaser.preview_photo_urls ?? [],
       location: response.teaser.location ?? '',
       photoCount: response.teaser.photo_count,
       facts: response.teaser.facts,
@@ -237,10 +263,6 @@ export const dealupApi = {
   },
 
   async startAnalysis(input: StartAnalysisInput, token?: string): Promise<{ analysisId: string }> {
-    if (useMocks) {
-      await wait(700);
-      return { analysisId: demoAnalysis.id };
-    }
     const mediaIds = await uploadPrivateMediaBatch(input.sellerMediaUris ?? [], token);
     const response = await request<{ analysis_id: string }>(
       '/v1/analyses',
@@ -267,10 +289,6 @@ export const dealupApi = {
     input: { reply?: string; mediaUris?: string[]; purchaseMode?: PurchaseMode },
     token?: string,
   ): Promise<{ analysisId: string }> {
-    if (useMocks) {
-      await wait(600);
-      return { analysisId: `reanalysis_${Date.now()}` };
-    }
     const mediaIds = await uploadPrivateMediaBatch(input.mediaUris ?? [], token);
     const response = await request<{ analysis_id: string }>(
       `/v1/analyses/${parentId}/reanalyze`,
@@ -298,15 +316,14 @@ export const dealupApi = {
   },
 
   async deleteAnalysis(id: string, token?: string): Promise<void> {
-    if (useMocks) return;
     await request(`/v1/analyses/${id}`, { method: 'DELETE' }, token);
   },
 
+  async retryAnalysis(id: string, token?: string): Promise<void> {
+    await request(`/v1/analyses/${id}/retry`, { method: 'POST', body: JSON.stringify({}) }, token);
+  },
+
   async getAnalysis(id: string, token?: string): Promise<AnalysisResult> {
-    if (useMocks) {
-      await wait(3500);
-      return { ...demoAnalysis, id };
-    }
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const response = await request<any>(`/v1/analyses/${id}`, { method: 'GET' }, token);
       if (response.status === 'completed' && response.result) {
@@ -318,5 +335,76 @@ export const dealupApi = {
       await wait(1500);
     }
     throw new Error('L’analyse continue en arrière-plan. Tu peux revenir dans quelques instants.');
+  },
+
+  async getAnalysisNow(id: string, token?: string): Promise<AnalysisResult> {
+    const response = await request<any>(`/v1/analyses/${id}`, { method: 'GET' }, token);
+    if (response.status !== 'completed' || !response.result) {
+      throw new Error('Cette analyse n’est pas encore disponible.');
+    }
+    return mapReport(response.result, response.id, response.created_at, response.purchase_mode);
+  },
+
+  async listAnalyses(token?: string): Promise<AnalysisSummary[]> {
+    const response = await request<any>('/v1/analyses?limit=50', { method: 'GET' }, token);
+    return response.items.map((item: any) => ({
+      id: item.id,
+      latestAnalysisId: item.latest_analysis_id,
+      status: item.status,
+      kind: item.kind,
+      device: item.device ? mapDevice(item.device) : null,
+      listing: item.listing ? mapListing(item.listing, item.latest_analysis_id) : null,
+      verdict: item.verdict ? {
+        type: item.verdict.type,
+        dealScore: item.verdict.deal_score,
+        confidence: item.verdict.confidence,
+        headline: item.verdict.headline,
+        explanation: item.verdict.explanation,
+      } : null,
+      templateId: item.template_id,
+      createdAt: item.created_at,
+      completedAt: item.completed_at,
+    }));
+  },
+
+  async getUsage(token?: string): Promise<Usage> {
+    const raw = await request<any>('/v1/me/usage', { method: 'GET' }, token);
+    return mapUsage(raw);
+  },
+
+  async getMe(token?: string): Promise<AccountProfile> {
+    const raw = await request<any>('/v1/me', { method: 'GET' }, token);
+    return {
+      id: raw.id,
+      clerkUserId: raw.clerk_user_id,
+      email: raw.email ?? null,
+      displayName: raw.display_name ?? null,
+      authProvider: raw.auth_provider ?? null,
+      createdAt: raw.created_at,
+      usage: mapUsage(raw.usage),
+    };
+  },
+
+  async registerDevice(pushToken: string, token?: string): Promise<void> {
+    await request('/v1/devices', {
+      method: 'POST',
+      body: JSON.stringify({ push_token: pushToken, platform: 'ios' }),
+    }, token);
+  },
+
+  async deleteAccount(token?: string): Promise<void> {
+    await request('/v1/me', { method: 'DELETE' }, token);
+  },
+
+  async syncBilling(token?: string): Promise<void> {
+    await request('/v1/billing/sync', { method: 'POST', body: JSON.stringify({}) }, token);
+  },
+
+  async getAnalysisMedia(id: string, token?: string): Promise<{ listing: string[]; seller: string[] }> {
+    const raw = await request<any>(`/v1/analyses/${id}/media`, { method: 'GET' }, token);
+    return {
+      listing: raw.items.filter((item: any) => item.role === 'listing_photo').map((item: any) => item.url),
+      seller: raw.items.filter((item: any) => item.role === 'seller_media').map((item: any) => item.url),
+    };
   },
 };

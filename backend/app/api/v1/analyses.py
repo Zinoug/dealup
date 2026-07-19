@@ -14,6 +14,7 @@ from app.schemas.analysis import (
     AnalysisAccepted,
     AnalysisCreate,
     AnalysisList,
+    AnalysisMediaList,
     AnalysisRead,
     ReanalysisCreate,
 )
@@ -61,6 +62,15 @@ def get_analysis(
     analyses: AnalysisService = Depends(service),
 ) -> AnalysisRead:
     return analyses.get(user, analysis_id)
+
+
+@router.get("/{analysis_id}/media", response_model=AnalysisMediaList)
+def get_analysis_media(
+    analysis_id: str,
+    user: CurrentUser,
+    analyses: AnalysisService = Depends(service),
+) -> AnalysisMediaList:
+    return analyses.list_media(user, analysis_id)
 
 
 @router.post(

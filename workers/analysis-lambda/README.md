@@ -1,23 +1,28 @@
 # DealUp Analysis Lambda
 
-Worker idempotent qui transforme une annonce Leboncoin en rapport DealUp structuré.
+Worker idempotent qui transforme une annonce Leboncoin privée en rapport DealUp.
 
 ## Traitement
 
-1. réserve atomiquement l’analyse `pending` ;
-2. charge l’extraction Piloterr privée créée pendant le teaser ;
-3. rappelle Piloterr uniquement pour un refresh ou un job sans payload ;
-4. archive jusqu’à 10 photos d’annonce et prépare jusqu’à 10 médias vendeur via S3 privé ;
-5. fournit l’annonce normalisée, le contexte et la seule taxonomie pertinente à Gemini ;
-6. effectue exactement un appel Gemini avec Google Search et `GeminiCandidateV2` ;
-7. calcule score, plafonds, verdict, prix, action, checklist et template localement ;
-8. stocke candidat interne, rapport public, sources internes, modèle et métriques ;
-9. recrédite l’unité en cas d’échec terminal ;
-10. envoie une notification Expo si le traitement dépasse le seuil configuré.
+1. réserve atomiquement une analyse `pending` ;
+2. charge l’extraction Piloterr déjà créée pendant le teaser ;
+3. rappelle Piloterr uniquement pour un refresh ou si le payload manque ;
+4. archive jusqu’à 10 photos d’annonce et prépare jusqu’à 10 médias vendeur dans S3 privé ;
+5. construit un dossier court en français avec des lignes `Libellé : valeur`, sans champs vides ;
+6. effectue exactement un appel Gemini avec les images utiles et Google Search ;
+7. extrait le premier objet JSON de la réponse et le nettoie de façon tolérante ;
+8. calcule localement score, plafonds, verdict, prix, action, checklist et template ;
+9. stocke séparément le candidat Gemini compact et le rapport public ;
+10. recrédite l’unité en cas d’échec terminal.
+11. envoie au mieux une notification Expo Push de fin ou d’échec aux appareils enregistrés ; une panne de notification ne modifie jamais le résultat de l’analyse.
 
-Gemini utilise l’Interactions API en mode stateless par défaut : `GEMINI_STORE_INTERACTIONS=false`.
+Le prompt, l’exemple JSON de réponse et les règles sont embarqués dans le worker :
 
-Les règles viennent de `../../contracts/analysis/`. Gemini garde des textes personnalisés bornés, mais ne contrôle pas les codes métier, le score ou verdict final, les montants recalculés, l’ordre UI, les assets ou les libellés de checklist.
+- `analysis_worker/integrations/gemini.py` : instruction système, exemple JSON, dossier naturel et appel fournisseur ;
+- `analysis_worker/rules.py` : taxonomies, score, checklists et métadonnées d’audit ;
+- `analysis_worker/services/postprocessor.py` : nettoyage tolérant et calcul déterministe.
+
+Il n’existe ni chargeur de contrats partagé, ni fichiers suffixés par une version, ni JSON Schema envoyé à Gemini. Git versionne l’implémentation. Le worker utilise `store=false`, un thinking level `low` et un timeout de 60 secondes par défaut.
 
 ## Vérification locale
 
@@ -29,7 +34,23 @@ cp .env.example .env
 pytest
 ```
 
+Pour consommer les jobs créés par FastAPI sur PostgreSQL local :
+
+```bash
+python run_local.py --watch
+```
+
+Pour afficher exactement l’exemple JSON demandé à Gemini sans appeler un fournisseur :
+
+```bash
+python run_local.py --response-example
+```
+
+Le terminal affiche l’identifiant d’analyse, l’étape, la durée, le modèle, la taille du prompt, le nombre d’images et le code d’erreur. Il n’affiche jamais le payload Leboncoin, les messages vendeur, les URLs signées, le prompt complet ou la réponse Gemini brute.
+
 Point d’entrée AWS Lambda : `handler.handler`.
+
+Les secrets de production peuvent être chargés depuis AWS Secrets Manager avec `DEALUP_SECRET_ARN`. Voir [`../../docs/operations/configuration.md`](../../docs/operations/configuration.md).
 
 Événement attendu :
 

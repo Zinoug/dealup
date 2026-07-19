@@ -15,8 +15,13 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: "fr",
     icons: [
       {
-        src: "/dealup-app-icon.png",
-        sizes: "1254x1254",
+        src: "/web-app-manifest-192x192.png",
+        sizes: "192x192",
+        type: "image/png",
+      },
+      {
+        src: "/web-app-manifest-512x512.png",
+        sizes: "512x512",
         type: "image/png",
       },
     ],

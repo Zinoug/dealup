@@ -1,43 +1,21 @@
 import type {
   AnalysisResult,
-  CompatibleDevicesCatalog,
   DeviceCategory,
   DeviceProfile,
   ListingTeaser,
   ReportTemplate,
-  Usage,
 } from '@/types/domain';
 
-export const DEMO_LISTING_URL =
+const FIXTURE_LISTING_URL =
   'https://www.leboncoin.fr/ad/telephones_objets_connectes/2893317712';
-
-export const compatibleDevicesCatalog: CompatibleDevicesCatalog = {
-  version: '1.0',
-  categories: [
-    {
-      code: 'IPHONE',
-      label: 'iPhone',
-      supportedRange: 'iPhone 11 et plus récents, iPhone SE 2 et SE 3',
-      assetKey: 'iphone-family-placeholder',
-      models: ['iPhone 11 et générations suivantes', 'iPhone SE 2', 'iPhone SE 3'],
-    },
-    {
-      code: 'MACBOOK',
-      label: 'MacBook',
-      supportedRange: 'MacBook Air et MacBook Pro avec puce Apple M1 ou plus récente',
-      assetKey: 'macbook-family-placeholder',
-      models: ['MacBook Air M1+', 'MacBook Pro M1+'],
-    },
-  ],
-  comingLater: ['iPad', 'Apple Watch', 'Téléphones Android', 'MacBook Intel'],
-};
 
 export const demoListing: ListingTeaser = {
   identificationId: 'listing_demo_iphone_15',
-  sourceUrl: DEMO_LISTING_URL,
+  sourceUrl: FIXTURE_LISTING_URL,
   title: 'iPhone 15 Pro — 256 Go — Titane naturel',
   priceCents: 75000,
   currency: 'EUR',
+  previewPhotoUrls: [],
   location: 'Paris 11e',
   photoCount: 7,
   facts: ['256 Go', 'Batterie 91 %', 'Facture annoncée', 'Remise en main propre'],
@@ -188,8 +166,8 @@ function buildMockReport(template: ReportTemplate, category: DeviceCategory): An
       { code: 'IN_PERSON_MEETING_ACCEPTED', label: 'La remise en main propre est possible' },
     ],
     missingInformation: [
-      { code: 'PROOF_OF_PURCHASE', priority: 'BLOCKING', label: 'Preuve d’achat', question: 'Peux-tu envoyer une photo de la preuve d’achat en masquant tes données personnelles ?' },
-      { code: isMac ? 'MDM_STATUS' : 'ACTIVATION_LOCK_STATUS', priority: 'BLOCKING', label: isMac ? 'Absence de MDM' : 'Verrouillage d’activation', question: isMac ? 'Peux-tu confirmer que le Mac ne dépend d’aucune entreprise ?' : 'Peux-tu confirmer que Localiser sera désactivé ?' },
+      { code: 'PROOF_OF_PURCHASE', priority: 'BLOCKING', label: 'La preuve d’achat reste à confirmer', reason: 'La boîte est mentionnée, mais aucun justificatif correspondant à cet appareil n’est visible.', question: 'Peux-tu envoyer une photo de la preuve d’achat en masquant tes données personnelles ?', evidence: ['DESCRIPTION'] },
+      { code: isMac ? 'MDM_STATUS' : 'ACTIVATION_LOCK_STATUS', priority: 'BLOCKING', label: isMac ? 'Le statut MDM reste inconnu' : 'Le verrouillage d’activation reste à contrôler', reason: isMac ? 'Aucune capture ne montre les profils de gestion installés.' : 'Les photos ne permettent pas de confirmer que Localiser sera désactivé.', question: isMac ? 'Peux-tu confirmer que le Mac ne dépend d’aucune entreprise ?' : 'Peux-tu confirmer que Localiser sera désactivé ?', evidence: ['PHOTO_1'] },
     ],
     messages: {
       requestProofs: isMac
@@ -235,16 +213,3 @@ export const reportFixtures = Object.fromEntries(
 ) as Record<`${DeviceCategory}_${ReportTemplate}`, AnalysisResult>;
 
 export const demoAnalysis = reportFixtures.IPHONE_NEGOTIATE;
-export const demoHistory: AnalysisResult[] = [
-  demoAnalysis,
-  { ...reportFixtures.IPHONE_BUY, id: 'analysis_demo_02', createdAt: new Date(Date.now() - 172800000).toISOString() },
-  { ...reportFixtures.MACBOOK_VERIFY_FIRST, id: 'analysis_demo_03', createdAt: new Date(Date.now() - 518400000).toISOString() },
-];
-
-export const demoUsage: Usage = {
-  plan: 'weekly',
-  used: 6,
-  limit: 15,
-  topUpRemaining: 0,
-  renewsLabel: 'Renouvellement lundi',
-};

@@ -8,6 +8,16 @@ from app.domain.contracts import get_analysis_contract
 CompatibilityStatus = Literal["SUPPORTED", "UNSUPPORTED", "UNKNOWN"]
 DeviceCategory = Literal["IPHONE", "MACBOOK"]
 
+EXCLUDED_ATTRIBUTE_KEYS = {
+    "profile_picture_url",
+    "rating_score",
+    "rating_count",
+    "estimated_parcel_weight",
+    "estimated_parcel_size",
+    "purchase_cta_visible",
+    "country_isocode3166",
+}
+
 
 @dataclass(frozen=True)
 class DeviceCompatibility:
@@ -43,8 +53,10 @@ def _attributes(payload: dict[str, Any]) -> list[dict[str, str]]:
         if not isinstance(item, dict):
             continue
         key = str(item.get("key") or item.get("key_label") or f"attribute_{index}")
+        if key.lower() in EXCLUDED_ATTRIBUTE_KEYS:
+            continue
         value = item.get("value_label") or item.get("value")
-        if value is not None:
+        if value is not None and not str(value).startswith(("http://", "https://")):
             normalized.append(
                 {"ref": f"attribute_{index + 1}", "key": key, "value": str(value)}
             )
@@ -241,14 +253,45 @@ def _price_cents(payload: dict[str, Any]) -> int | None:
     return None
 
 
+def _attribute_values(payload: dict[str, Any]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for item in payload.get("attributes") or []:
+        if not isinstance(item, dict) or not item.get("key"):
+            continue
+        value = item.get("value") or item.get("value_label")
+        if value is not None:
+            values[str(item["key"]).lower()] = str(value)
+    return values
+
+
+def _integer(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _https_urls(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        item for item in value if isinstance(item, str) and item.startswith("https://")
+    ]
+
+
 def normalize_listing(payload: dict[str, Any]) -> dict[str, Any]:
     images = payload.get("images") if isinstance(payload.get("images"), dict) else {}
-    urls = images.get("urls") if isinstance(images, dict) else []
-    urls = urls if isinstance(urls, list) else []
+    large_urls = _https_urls(images.get("urls_large"))
+    standard_urls = _https_urls(images.get("urls"))
+    urls = large_urls or standard_urls
     location = (
         payload.get("location") if isinstance(payload.get("location"), dict) else {}
     )
     seller = payload.get("owner") if isinstance(payload.get("owner"), dict) else {}
+    attribute_values = _attribute_values(payload)
+    counters = (
+        payload.get("counters") if isinstance(payload.get("counters"), dict) else {}
+    )
     return {
         "title": str(payload.get("subject") or ""),
         "description": str(payload.get("body") or "")[:12_000],
@@ -270,7 +313,15 @@ def normalize_listing(payload: dict[str, Any]) -> dict[str, Any]:
         },
         "seller_public": {
             "account_age": seller.get("account_age"),
-            "rating_count": seller.get("rating_count"),
-            "rating": seller.get("rating"),
+            "rating_count": _integer(
+                attribute_values.get("rating_count") or seller.get("rating_count")
+            ),
+        },
+        "publication": {
+            "status": payload.get("status"),
+            "first_published_at": payload.get("first_publication_date"),
+            "indexed_at": payload.get("index_date"),
+            "favorite_count": _integer(counters.get("favorites")),
+            "is_boosted": bool(payload.get("is_boosted")),
         },
     }

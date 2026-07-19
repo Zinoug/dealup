@@ -1,24 +1,47 @@
+from __future__ import annotations
+
+from typing import Any
+
 import httpx
 
 
-class PushClient:
-    endpoint = "https://exp.host/--/api/v2/push/send"
+class PushNotifier:
+    """Best-effort Expo Push delivery for registered iOS devices."""
 
-    def send_analysis_ready(self, tokens: list[str], analysis_id: str) -> None:
-        if not tokens:
-            return
+    def __init__(self, endpoint: str, timeout_seconds: float = 8.0) -> None:
+        self.endpoint = endpoint
+        self.timeout_seconds = timeout_seconds
+
+    def send(
+        self,
+        tokens: list[str],
+        *,
+        title: str,
+        body: str,
+        data: dict[str, Any],
+    ) -> None:
         messages = [
             {
                 "to": token,
-                "title": "Ton analyse DealUp est prête",
-                "body": "Découvre le verdict, le juste prix et la meilleure action.",
-                "data": {"analysis_id": analysis_id, "type": "analysis_completed"},
+                "title": title,
+                "body": body,
+                "data": data,
                 "sound": "default",
+                "priority": "high",
             }
-            for token in tokens
+            for token in dict.fromkeys(tokens)
+            if token.startswith(("ExponentPushToken[", "ExpoPushToken["))
         ]
-        try:
-            httpx.post(self.endpoint, json=messages, timeout=10.0).raise_for_status()
-        except httpx.HTTPError:
-            # A push failure must never fail or roll back a completed analysis.
+        if not messages:
             return
+        with httpx.Client(timeout=self.timeout_seconds) as client:
+            response = client.post(
+                self.endpoint,
+                json=messages,
+                headers={
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "Content-Type": "application/json",
+                },
+            )
+            response.raise_for_status()

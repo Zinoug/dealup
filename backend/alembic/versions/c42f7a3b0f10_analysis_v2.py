@@ -26,6 +26,7 @@ def _json_type() -> sa.types.TypeEngine:
 
 def upgrade() -> None:
     json_type = _json_type()
+    dialect = op.get_bind().dialect.name
 
     op.add_column(
         "listing_identifications",
@@ -122,8 +123,9 @@ def upgrade() -> None:
     op.execute(
         "UPDATE analyses SET root_analysis_id = id WHERE parent_analysis_id IS NULL"
     )
-    op.alter_column("analyses", "prompt_version", server_default="2.0")
-    op.alter_column("analyses", "schema_version", server_default="2.0")
+    if dialect != "sqlite":
+        op.alter_column("analyses", "prompt_version", server_default="2.0")
+        op.alter_column("analyses", "schema_version", server_default="2.0")
 
     op.add_column(
         "media", sa.Column("analysis_id", sa.String(length=36), nullable=True)
@@ -136,14 +138,24 @@ def upgrade() -> None:
         ),
     )
     op.add_column("media", sa.Column("ordinal", sa.Integer(), nullable=True))
-    op.create_foreign_key(
-        "fk_media_analysis_id",
-        "media",
-        "analyses",
-        ["analysis_id"],
-        ["id"],
-        ondelete="CASCADE",
-    )
+    if dialect == "sqlite":
+        with op.batch_alter_table("media") as batch_op:
+            batch_op.create_foreign_key(
+                "fk_media_analysis_id",
+                "analyses",
+                ["analysis_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+    else:
+        op.create_foreign_key(
+            "fk_media_analysis_id",
+            "media",
+            "analyses",
+            ["analysis_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
     op.create_index("ix_media_analysis_id", "media", ["analysis_id"])
 
     op.create_table(
@@ -162,7 +174,7 @@ def upgrade() -> None:
     op.create_index("ix_deletion_jobs_user_id", "deletion_jobs", ["user_id"])
     op.create_index("ix_deletion_jobs_status", "deletion_jobs", ["status"])
 
-    if op.get_bind().dialect.name == "postgresql":
+    if dialect == "postgresql":
         for table, columns in {
             "listing_identifications": ["payload", "teaser"],
             "analyses": [
@@ -185,12 +197,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    dialect = op.get_bind().dialect.name
     op.drop_index("ix_deletion_jobs_status", table_name="deletion_jobs")
     op.drop_index("ix_deletion_jobs_user_id", table_name="deletion_jobs")
     op.drop_table("deletion_jobs")
 
     op.drop_index("ix_media_analysis_id", table_name="media")
-    op.drop_constraint("fk_media_analysis_id", "media", type_="foreignkey")
+    if dialect == "sqlite":
+        with op.batch_alter_table("media") as batch_op:
+            batch_op.drop_constraint("fk_media_analysis_id", type_="foreignkey")
+    else:
+        op.drop_constraint("fk_media_analysis_id", "media", type_="foreignkey")
     for column in ["ordinal", "role", "sha256", "analysis_id"]:
         op.drop_column("media", column)
 

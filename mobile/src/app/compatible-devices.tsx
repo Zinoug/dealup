@@ -1,38 +1,85 @@
+import { Image, type ImageSource } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, Clock3, Laptop, Smartphone } from 'lucide-react-native';
+import { ArrowLeft, Check, ChevronRight, X } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { DarkHeader, DarkSafeScreen, GlassCard, LimeButton } from '@/components/reference-ui';
-import { compatibleDevicesCatalog } from '@/data/mock';
+import { compatibleDevicesFallback } from '@/data/compatible-devices';
 import { dealupApi } from '@/services/dealup-api';
-import { colors, layout, type } from '@/theme/tokens';
-import type { CompatibleDevicesCatalog } from '@/types/domain';
+import { colors, layout, shadows } from '@/theme/tokens';
+import type { CompatibleDeviceCategory, CompatibleDevicesCatalog } from '@/types/domain';
+
+const images: Record<'IPHONE' | 'MACBOOK', ImageSource> = {
+  IPHONE: require('../../assets/devices/iphone-family-apple.webp'),
+  MACBOOK: require('../../assets/devices/macbook-family-apple.webp'),
+};
 
 export default function CompatibleDevicesScreen() {
   const { status } = useLocalSearchParams<{ status?: string }>();
-  const [catalog, setCatalog] = useState<CompatibleDevicesCatalog>(compatibleDevicesCatalog);
+  const [catalog, setCatalog] = useState<CompatibleDevicesCatalog>(compatibleDevicesFallback);
+  const [selected, setSelected] = useState<CompatibleDeviceCategory | null>(null);
   useEffect(() => { void dealupApi.compatibleDevices().then(setCatalog).catch(() => undefined); }, []);
+
   return (
-    <DarkSafeScreen variant="tag" edges={['top', 'left', 'right']}>
-      <DarkHeader title="Appareils compatibles" />
+    <SafeAreaView edges={['top', 'left', 'right']} style={styles.safe}>
+      <View style={styles.header}><Pressable accessibilityLabel="Retour" hitSlop={10} onPress={() => router.back()} style={styles.back}><ArrowLeft color={colors.lightInk} size={23} /></Pressable><Text style={styles.headerTitle}>Appareils compatibles</Text><View style={styles.headerSpacer} /></View>
       <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
-        {status ? <View style={styles.notice}><Text style={styles.noticeTitle}>Cet appareil n’est pas encore pris en charge</Text><Text style={styles.noticeBody}>Aucun abonnement ni quota n’a été consommé.</Text></View> : null}
-        <Text style={styles.title}>Deux familles, une analyse vraiment spécialisée.</Text>
-        <Text style={styles.subtitle}>DealUp applique des risques et une checklist différents selon l’appareil.</Text>
+        {status ? <View style={styles.notice}><Text style={styles.noticeTitle}>Cet appareil n’est pas encore pris en charge</Text></View> : null}
+        <Text style={styles.title}>Les appareils que DealUp sait analyser.</Text>
+        <Text style={styles.subtitle}>Deux familles Apple pour commencer, avec des vérifications adaptées à chacune.</Text>
         <View style={styles.cards}>
-          {catalog.categories.map((category) => {
-            const Icon = category.code === 'MACBOOK' ? Laptop : Smartphone;
-            return <GlassCard key={category.code} style={styles.card}><View style={styles.icon}><Icon size={30} color={colors.lime} /></View><View style={styles.copy}><Text style={styles.cardTitle}>{category.label}</Text><Text style={styles.range}>{category.supportedRange}</Text>{category.models.map((model) => <View key={model} style={styles.model}><Check size={13} color={colors.lime} /><Text style={styles.modelText}>{model}</Text></View>)}</View></GlassCard>;
-          })}
+          {catalog.categories.map((category) => (
+            <Pressable key={category.code} onPress={() => setSelected(category)} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+              <View style={styles.visual}><Image contentFit="contain" source={images[category.code]} style={StyleSheet.absoluteFill} /></View>
+              <View style={styles.cardBottom}><View style={styles.cardCopy}><Text style={styles.cardTitle}>{category.label}</Text><Text style={styles.range}>{category.supportedRange}</Text></View><ChevronRight color={colors.brand700} size={22} /></View>
+            </Pressable>
+          ))}
         </View>
-        <View style={styles.soon}><Clock3 size={18} color={colors.inkMuted} /><View><Text style={styles.soonTitle}>Pas encore compatibles</Text><Text style={styles.soonText}>{catalog.comingLater.join(' · ')}</Text></View></View>
-        <LimeButton label="Analyser une annonce compatible" onPress={() => router.replace('/(tabs)')} style={styles.button} />
+        <Text style={styles.soon}>Télephones Android, iPad, Apple Watch arrivent bientôt.</Text>
       </ScrollView>
-    </DarkSafeScreen>
+
+      <Modal animationType="slide" onRequestClose={() => setSelected(null)} presentationStyle="pageSheet" visible={Boolean(selected)}>
+        <SafeAreaView style={styles.modalSafe}>
+          <View style={styles.modalHeader}><View><Text style={styles.modalEyebrow}>Appareils compatibles</Text><Text style={styles.modalTitle}>{selected?.label}</Text></View><Pressable accessibilityLabel="Fermer" onPress={() => setSelected(null)} style={styles.close}><X color={colors.lightInk} size={21} /></Pressable></View>
+          <View style={styles.modalVisual}>{selected ? <Image contentFit="contain" source={images[selected.code]} style={StyleSheet.absoluteFill} /> : null}</View>
+          <View style={styles.models}>{selected?.models.map((model) => <View key={model} style={styles.model}><View style={styles.check}><Check color={colors.brand900} size={14} strokeWidth={3} /></View><Text style={styles.modelText}>{model}</Text></View>)}</View>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { paddingHorizontal: layout.gutter, paddingTop: 12, paddingBottom: 18 }, notice: { borderRadius: 14, backgroundColor: colors.amberSoft, borderWidth: 1, borderColor: 'rgba(255,170,37,.3)', padding: 14, marginBottom: 18 }, noticeTitle: { color: colors.amber, fontSize: 13, fontWeight: '700' }, noticeBody: { color: colors.inkMuted, fontSize: 11, marginTop: 4 }, title: { ...type.h1, color: colors.white, fontSize: 27 }, subtitle: { color: colors.inkMuted, fontSize: 13, lineHeight: 19, marginTop: 8 }, cards: { gap: 10, marginTop: 22 }, card: { flexDirection: 'row', gap: 14, padding: 16 }, icon: { width: 52, height: 52, borderRadius: 16, backgroundColor: 'rgba(196,245,42,.10)', alignItems: 'center', justifyContent: 'center' }, copy: { flex: 1 }, cardTitle: { color: colors.white, fontSize: 18, fontWeight: '700' }, range: { color: colors.inkMuted, fontSize: 11, lineHeight: 16, marginTop: 3, marginBottom: 9 }, model: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }, modelText: { color: '#DCE7E1', fontSize: 10, flex: 1 }, soon: { flexDirection: 'row', gap: 10, marginTop: 20, paddingHorizontal: 6 }, soonTitle: { color: colors.white, fontSize: 12, fontWeight: '700' }, soonText: { color: colors.inkMuted, fontSize: 10, lineHeight: 15, marginTop: 2, maxWidth: 300 }, button: { marginTop: 24 },
+  safe: { flex: 1, backgroundColor: colors.lightSurface },
+  header: { height: 54, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { color: colors.lightInk, fontSize: 15, fontWeight: '700' },
+  headerSpacer: { width: 44 },
+  body: { paddingHorizontal: layout.gutter, paddingTop: 14, paddingBottom: 35 },
+  notice: { borderRadius: 16, backgroundColor: '#FFF2D9', borderWidth: 1, borderColor: '#F0D4A2', padding: 14, marginBottom: 20 },
+  noticeTitle: { color: '#8C5712', fontSize: 13, fontWeight: '700' },
+  noticeBody: { color: '#8B7351', fontSize: 11, marginTop: 4 },
+  title: { color: colors.lightInk, fontSize: 29, lineHeight: 34, fontWeight: '700', letterSpacing: -.8 },
+  subtitle: { color: colors.lightMuted, fontSize: 14, lineHeight: 20, marginTop: 9 },
+  cards: { gap: 14, marginTop: 25 },
+  card: { borderRadius: 25, overflow: 'hidden', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E0E3DC', ...shadows.subtle },
+  pressed: { opacity: .7, transform: [{ scale: .993 }] },
+  visual: { height: 194, backgroundColor: '#F2F4ED' },
+  cardBottom: { minHeight: 84, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardCopy: { flex: 1 },
+  cardTitle: { color: colors.lightInk, fontSize: 20, fontWeight: '700' },
+  range: { color: colors.lightMuted, fontSize: 12, lineHeight: 17, marginTop: 3 },
+  soon: { color: '#7B857F', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 22, paddingHorizontal: 12 },
+  modalSafe: { flex: 1, backgroundColor: colors.lightSurface, paddingHorizontal: layout.gutter },
+  modalHeader: { minHeight: 76, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  modalEyebrow: { color: colors.lightMuted, fontSize: 12, fontWeight: '600' },
+  modalTitle: { color: colors.lightInk, fontSize: 26, fontWeight: '700', marginTop: 2 },
+  close: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.lightBorder },
+  modalVisual: { height: 245, borderRadius: 24, overflow: 'hidden', backgroundColor: '#F0F2EA', marginTop: 10 },
+  models: { marginTop: 22, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.lightBorder, paddingHorizontal: 16 },
+  model: { minHeight: 57, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.lightBorder, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  check: { width: 25, height: 25, borderRadius: 13, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  modelText: { flex: 1, color: colors.lightInk, fontSize: 14, lineHeight: 19 },
+  modalNote: { color: colors.lightMuted, fontSize: 12, textAlign: 'center', marginTop: 18 },
 });

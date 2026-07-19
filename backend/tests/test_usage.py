@@ -58,16 +58,20 @@ def test_topup_is_used_only_after_included_quota() -> None:
             kind=AnalysisKind.INITIAL,
             idempotency_key="quota-first",
             request_fingerprint="a" * 64,
-            source_url="https://www.leboncoin.fr/ad/telephones_objets_connectes/1",
             purchase_mode=PurchaseMode.FACE_TO_FACE,
+            input_snapshot={
+                "source_url": "https://www.leboncoin.fr/ad/telephones_objets_connectes/1"
+            },
         )
         second = Analysis(
             user_id=user.id,
             kind=AnalysisKind.INITIAL,
             idempotency_key="quota-second",
             request_fingerprint="b" * 64,
-            source_url="https://www.leboncoin.fr/ad/telephones_objets_connectes/2",
             purchase_mode=PurchaseMode.FACE_TO_FACE,
+            input_snapshot={
+                "source_url": "https://www.leboncoin.fr/ad/telephones_objets_connectes/2"
+            },
         )
         session.add_all([first, second])
         session.flush()

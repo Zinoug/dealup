@@ -1,13 +1,21 @@
+from copy import deepcopy
 from dataclasses import dataclass
+import re
 from typing import Any
+import unicodedata
 
-from analysis_worker.contracts import AnalysisContracts, get_contracts
+from analysis_worker.rules import (
+    CHECKLISTS,
+    REPORT_SCHEMA_VERSION,
+    SCORE_CAPS,
+    SCORE_WEIGHTS,
+    missing_codes,
+    positive_codes,
+    risk_catalog,
+)
 from analysis_worker.schemas.result import (
     ActionType,
     AnalysisResult,
-    FindingStatus,
-    GeminiCandidateV2,
-    Severity,
     VerdictType,
 )
 
@@ -28,19 +36,67 @@ SENSITIVE_TERMS = {
     "religion",
 }
 
-SEVERITY_ORDER = {
-    Severity.LOW: 1,
-    Severity.MEDIUM: 2,
-    Severity.HIGH: 3,
-    Severity.CRITICAL: 4,
+CONFIDENCES = {"LOW", "MEDIUM", "HIGH"}
+STATUSES = {"CONFIRMED", "LIKELY", "UNVERIFIED", "RESOLVED"}
+SEVERITIES = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+PRIORITIES = {"BLOCKING", "USEFUL"}
+SCORE_KEYS = ("price", "condition", "proofs", "consistency", "transaction")
+PUBLIC_SCORE_KEYS = {
+    "price": "PRICE_VALUE",
+    "condition": "CONDITION",
+    "proofs": "PROOFS_OWNERSHIP",
+    "consistency": "LISTING_CONSISTENCY",
+    "transaction": "TRANSACTION_SAFETY",
 }
-
+SEVERITY_ORDER = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 ACTION_LABELS = {
     ActionType.REQUEST_PROOFS: "Demander les preuves manquantes",
     ActionType.MAKE_OFFER: "Préparer une offre",
     ActionType.START_CHECKLIST: "Démarrer la checklist",
     ActionType.COMPARE_ANOTHER: "Analyser une autre annonce",
     ActionType.AVOID_LISTING: "Éviter cette annonce",
+}
+
+COLOR_TERMS = {
+    "color",
+    "couleur",
+    "teinte",
+    "bleu",
+    "blue",
+    "gris",
+    "gray",
+    "grey",
+    "noir",
+    "black",
+    "blanc",
+    "white",
+    "argent",
+    "silver",
+    "dore",
+    "gold",
+    "titane",
+    "titanium",
+}
+NEGATIVE_VISUAL_TERMS = (
+    "absence",
+    "absent",
+    "non visible",
+    "pas visible",
+    "n est pas visible",
+    "ne montre pas",
+    "semble manquer",
+    "parait manquer",
+    "pas de bouton",
+    "sans le bouton",
+)
+IDENTITY_CONTRADICTION_CODES = {
+    "LISTING_INCONSISTENCY",
+    "PHOTO_INCONSISTENCY",
+    "PRODUCT_IDENTITY_UNCLEAR",
+    "STORAGE_MISMATCH",
+    "MODEL_REGION_MISMATCH",
+    "SYSTEM_SPECS_MISMATCH",
+    "SERIAL_MODEL_MISMATCH",
 }
 
 
@@ -50,154 +106,443 @@ class ProcessedReport:
     metadata: dict[str, Any]
 
 
-def sanitize_candidate(candidate: GeminiCandidateV2) -> tuple[GeminiCandidateV2, int]:
-    """Remove sensitive-trait reasoning before either internal or public persistence."""
-    payload = candidate.model_dump(mode="json")
-    dropped = 0
-
-    def replace(container: dict[str, Any], key: str, fallback: str | None) -> None:
-        nonlocal dropped
-        value = container.get(key)
-        if isinstance(value, str) and _contains_sensitive_text(value):
-            container[key] = fallback
-            dropped += 1
-
-    replace(payload, "headline", "Analyse de l’annonce à vérifier")
-    replace(
-        payload,
-        "summary",
-        "DealUp a écarté un commentaire non pertinent et conserve uniquement les éléments vérifiables de l’annonce.",
-    )
-    replace(payload, "expert_note", None)
-    for value in payload.get("score_breakdown", {}).values():
-        if isinstance(value, dict):
-            replace(
-                value,
-                "rationale",
-                "Sous-score fondé uniquement sur les éléments vérifiables du dossier.",
-            )
-    if isinstance(payload.get("pricing"), dict):
-        replace(
-            payload["pricing"],
-            "commentary",
-            "Estimation fondée sur la configuration et le marché observé.",
-        )
-    if isinstance(payload.get("primary_action_candidate"), dict):
-        replace(
-            payload["primary_action_candidate"],
-            "reason",
-            "Cette action dépend uniquement des preuves et risques vérifiables.",
-        )
-    if isinstance(payload.get("messages"), dict):
-        fallbacks = {
-            "request_proofs": "Bonjour, pouvez-vous transmettre les preuves demandées dans l’annonce ?",
-            "make_offer": "Bonjour, je souhaite vous faire une offre sous réserve des vérifications.",
-            "decline": "Merci pour votre réponse. Je préfère ne pas donner suite.",
-        }
-        for key, fallback in fallbacks.items():
-            replace(payload["messages"], key, fallback)
-
-    filtered_lists = {
-        "observations": ("text",),
-        "positive_signals": ("label",),
-        "missing_information": ("label", "question"),
-    }
-    for key, fields in filtered_lists.items():
-        retained = []
-        for item in payload.get(key) or []:
-            if isinstance(item, dict) and _contains_sensitive_text(
-                *(str(item.get(field) or "") for field in fields)
-            ):
-                dropped += 1
-            else:
-                retained.append(item)
-        payload[key] = retained
-
-    retained_risks = []
-    for item in payload.get("risks") or []:
-        content = item.get("generated_content") if isinstance(item, dict) else None
-        if isinstance(content, dict) and _contains_sensitive_text(
-            str(content.get("display_title") or ""),
-            str(content.get("commentary") or ""),
-            str(content.get("recommended_check") or ""),
-        ):
-            dropped += 1
-        else:
-            retained_risks.append(item)
-    payload["risks"] = retained_risks
-    retained_changes = []
-    for item in payload.get("change_summary") or []:
-        if isinstance(item, str) and _contains_sensitive_text(item):
-            dropped += 1
-        else:
-            retained_changes.append(item)
-    payload["change_summary"] = retained_changes
-    return GeminiCandidateV2.model_validate(payload), dropped
-
-
-def _contains_sensitive_text(*values: str | None) -> bool:
-    text = " ".join(value or "" for value in values).lower()
+def _contains_sensitive_text(*values: Any) -> bool:
+    text = " ".join(str(value or "") for value in values).lower()
     return any(term in text for term in SENSITIVE_TERMS)
 
 
-def _risk_catalog(
-    contracts: AnalysisContracts, category: str
-) -> dict[str, dict[str, Any]]:
-    common, specific = contracts.taxonomy(category)
-    return {
-        str(item["code"]): item
-        for taxonomy in (common, specific)
-        for item in taxonomy.get("risks", [])
-        if isinstance(item, dict) and item.get("code")
-    }
+def _text(value: Any, fallback: str, limit: int) -> str:
+    result = value.strip() if isinstance(value, str) else ""
+    return (result or fallback)[:limit]
 
 
-def _allowed_codes(contracts: AnalysisContracts, category: str, key: str) -> set[str]:
-    common, specific = contracts.taxonomy(category)
-    return {
-        str(code)
-        for taxonomy in (common, specific)
-        for code in taxonomy.get(key, [])
-        if isinstance(code, str)
-    }
+def _integer(value: Any, default: int = 0) -> int:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return default
 
 
-def _score(candidate: GeminiCandidateV2, contracts: AnalysisContracts) -> int:
-    dimensions = candidate.score_breakdown.model_dump()
-    weights = contracts.scoring["weights"]
-    return round(
-        sum(float(weights[key]) * int(dimensions[key]["score"]) for key in weights)
+def _score_value(value: Any) -> int:
+    return max(0, min(_integer(value, 50), 100))
+
+
+def _enum(value: Any, allowed: set[str], default: str) -> str:
+    candidate = str(value or "").upper()
+    return candidate if candidate in allowed else default
+
+
+def _normalized_words(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(
+        character for character in text if not unicodedata.combining(character)
     )
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _declared_identity_agrees(
+    normalized_listing: dict[str, Any], device_profile: dict[str, Any]
+) -> bool:
+    identity = _normalized_words(device_profile.get("display_name"))
+    if not identity:
+        return False
+
+    sources = [
+        normalized_listing.get("title"),
+        normalized_listing.get("description"),
+    ]
+    attributes = normalized_listing.get("attributes")
+    if isinstance(attributes, list):
+        model_attributes = [
+            item.get("value")
+            for item in attributes
+            if isinstance(item, dict)
+            and any(
+                marker in _normalized_words(item.get("key"))
+                for marker in ("model", "modele", "product")
+            )
+        ]
+        sources.append(" ".join(str(value or "") for value in model_attributes))
+
+    return sum(identity in _normalized_words(source) for source in sources) >= 2
+
+
+def _declared_color(
+    normalized_listing: dict[str, Any], device_profile: dict[str, Any]
+) -> str | None:
+    specs = device_profile.get("specs")
+    if isinstance(specs, dict) and specs.get("color"):
+        return str(specs["color"])
+    for item in normalized_listing.get("attributes") or []:
+        if not isinstance(item, dict):
+            continue
+        if "color" in _normalized_words(
+            item.get("key")
+        ) or "couleur" in _normalized_words(item.get("key")):
+            value = str(item.get("value") or "").strip()
+            if value:
+                return value
+    return None
+
+
+def _photo_only(item: dict[str, Any]) -> bool:
+    evidence = item.get("evidence")
+    return bool(evidence) and all(
+        isinstance(reference, str) and reference.startswith("PHOTO_")
+        for reference in evidence
+    )
+
+
+def _mentions_color(*values: Any) -> bool:
+    words = set(
+        _normalized_words(" ".join(str(value or "") for value in values)).split()
+    )
+    return bool(words & COLOR_TERMS)
+
+
+def _uses_negative_visual_evidence(*values: Any) -> bool:
+    text = _normalized_words(" ".join(str(value or "") for value in values))
+    return any(term in text for term in NEGATIVE_VISUAL_TERMS)
+
+
+def _apply_visual_evidence_guardrails(
+    candidate: dict[str, Any],
+    *,
+    normalized_listing: dict[str, Any],
+    device_profile: dict[str, Any],
+    catalog: dict[str, dict[str, Any]],
+) -> int:
+    """Neutralize photo-only claims that are not positive identification evidence."""
+    declared_identity_agrees = _declared_identity_agrees(
+        normalized_listing, device_profile
+    )
+    declared_color = _declared_color(normalized_listing, device_profile)
+    changed = 0
+
+    for item in candidate.get("risks") or []:
+        if not isinstance(item, dict) or not _photo_only(item):
+            continue
+
+        if item.get("code") in {
+            "PHOTO_INCONSISTENCY",
+            "COLOR_MISMATCH",
+        } and _mentions_color(
+            item.get("title"), item.get("comment"), item.get("check")
+        ):
+            if "COLOR_MISMATCH" in catalog:
+                item["code"] = "COLOR_MISMATCH"
+            item["status"] = "UNVERIFIED"
+            item["severity"] = "LOW"
+            item["title"] = "Variation de couleur entre les photos"
+            color_context = (
+                f" Les données de l’annonce indiquent {declared_color}."
+                if declared_color
+                else ""
+            )
+            item["comment"] = (
+                "L’éclairage, les reflets et la balance des blancs peuvent modifier "
+                f"la teinte apparente.{color_context} La couleur reste à confirmer."
+            )
+            item["check"] = (
+                "Demander une photo de l’arrière en lumière neutre, sans filtre."
+            )
+            item["visual_guardrail"] = True
+            changed += 1
+            continue
+
+        if (
+            item.get("code") == "PRODUCT_IDENTITY_UNCLEAR"
+            and declared_identity_agrees
+            and _uses_negative_visual_evidence(
+                item.get("title"), item.get("comment"), item.get("check")
+            )
+        ):
+            display_name = _text(
+                device_profile.get("display_name"), "le modèle déclaré", 100
+            )
+            item["status"] = "UNVERIFIED"
+            item["severity"] = "MEDIUM"
+            item["title"] = "Modèle à confirmer"
+            item["comment"] = (
+                "Le titre, la description et les caractéristiques concordent sur "
+                f"{display_name}. L’absence apparente d’un détail sur une photo ne "
+                "permet pas d’identifier un autre modèle."
+            )
+            item["check"] = (
+                "Demander une capture de Réglages > Général > Informations affichant "
+                "le nom et le numéro de modèle."
+            )
+            item["visual_guardrail"] = True
+            changed += 1
+
+    if not changed:
+        return 0
+
+    unresolved_identity_contradiction = any(
+        item.get("code") in IDENTITY_CONTRADICTION_CODES
+        and item.get("status") != "RESOLVED"
+        and not item.get("visual_guardrail")
+        for item in candidate.get("risks") or []
+        if isinstance(item, dict)
+    )
+    if declared_identity_agrees and not unresolved_identity_contradiction:
+        consistency = candidate["scores"]["consistency"]
+        consistency["value"] = max(int(consistency["value"]), 60)
+        consistency["reason"] = (
+            "Le titre, la description et les caractéristiques structurées concordent "
+            "sur le modèle déclaré ; les variations visuelles restent à confirmer."
+        )
+
+    candidate["headline"] = "Offre intéressante, mais des preuves restent à demander"
+    candidate["summary"] = (
+        "Les informations de l’annonce concordent sur le modèle déclaré. Les variations "
+        "visibles peuvent venir de l’éclairage ou de l’angle ; confirme le modèle et "
+        "les preuves manquantes avant de payer."
+    )
+    candidate["action_reason"] = (
+        "Confirmer le modèle déclaré et demander les preuves manquantes avant de poursuivre."
+    )
+    return changed
+
+
+def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Make Gemini output safe and tolerant before internal persistence."""
+    raw = deepcopy(candidate)
+    dropped = 0
+    headline = _text(raw.get("headline"), "Analyse de l’annonce à vérifier", 90)
+    summary = _text(
+        raw.get("summary"),
+        "Les éléments disponibles nécessitent encore quelques vérifications.",
+        450,
+    )
+    if _contains_sensitive_text(headline):
+        headline = "Analyse de l’annonce à vérifier"
+        dropped += 1
+    if _contains_sensitive_text(summary):
+        summary = "DealUp conserve uniquement les éléments vérifiables de l’annonce."
+        dropped += 1
+
+    raw_scores = raw.get("scores") if isinstance(raw.get("scores"), dict) else {}
+    scores: dict[str, dict[str, Any]] = {}
+    for key in SCORE_KEYS:
+        item = raw_scores.get(key)
+        item = item if isinstance(item, dict) else {"value": item}
+        reason = _text(
+            item.get("reason"),
+            "Sous-score fondé sur les éléments disponibles.",
+            320,
+        )
+        if _contains_sensitive_text(reason):
+            reason = "Sous-score fondé uniquement sur les éléments vérifiables."
+            dropped += 1
+        scores[key] = {"value": _score_value(item.get("value")), "reason": reason}
+
+    risks: list[dict[str, Any]] = []
+    for item in raw.get("risks") or []:
+        if not isinstance(item, dict) or len(risks) >= 5:
+            continue
+        title = _text(item.get("title"), "Point à vérifier", 80)
+        comment = _text(
+            item.get("comment"),
+            "Les éléments disponibles ne permettent pas encore de confirmer ce point.",
+            320,
+        )
+        check = _text(
+            item.get("check"), "Demander une preuve claire avant le paiement.", 220
+        )
+        if _contains_sensitive_text(title, comment, check):
+            dropped += 1
+            continue
+        evidence = [
+            value
+            for value in item.get("evidence") or []
+            if isinstance(value, str)
+            and (
+                value in {"DESCRIPTION", "ATTRIBUTE", "SELLER_MESSAGE", "WEB"}
+                or value.startswith("PHOTO_")
+                or value.startswith("SELLER_MEDIA_")
+            )
+        ][:10]
+        risks.append(
+            {
+                "code": _text(item.get("code"), "OTHER", 80).upper(),
+                "status": _enum(item.get("status"), STATUSES, "UNVERIFIED"),
+                "severity": _enum(item.get("severity"), SEVERITIES, "MEDIUM"),
+                "title": title,
+                "comment": comment,
+                "check": check,
+                "evidence": evidence,
+            }
+        )
+
+    positives: list[dict[str, str]] = []
+    for item in raw.get("positive_signals") or []:
+        if not isinstance(item, dict) or len(positives) >= 4:
+            continue
+        label = _text(item.get("label"), "Signal positif observé", 300)
+        if _contains_sensitive_text(label):
+            dropped += 1
+            continue
+        positives.append(
+            {"code": _text(item.get("code"), "", 80).upper(), "label": label}
+        )
+
+    missing: list[dict[str, str]] = []
+    for item in raw.get("missing_information") or []:
+        if not isinstance(item, dict) or len(missing) >= 4:
+            continue
+        label = _text(item.get("label"), "Information manquante", 300)
+        reason = _text(
+            item.get("reason"),
+            "Les éléments fournis ne permettent pas encore de confirmer ce point.",
+            320,
+        )
+        question = _text(item.get("question"), "Pouvez-vous préciser ce point ?", 500)
+        if _contains_sensitive_text(label, reason, question):
+            dropped += 1
+            continue
+        evidence = [
+            value
+            for value in item.get("evidence") or []
+            if isinstance(value, str)
+            and (
+                value in {"DESCRIPTION", "ATTRIBUTE", "SELLER_MESSAGE", "WEB"}
+                or value.startswith("PHOTO_")
+                or value.startswith("SELLER_MEDIA_")
+            )
+        ][:10]
+        missing.append(
+            {
+                "code": _text(item.get("code"), "", 80).upper(),
+                "priority": _enum(item.get("priority"), PRIORITIES, "USEFUL"),
+                "label": label,
+                "reason": reason,
+                "question": question,
+                "evidence": evidence,
+            }
+        )
+
+    raw_pricing = raw.get("pricing") if isinstance(raw.get("pricing"), dict) else {}
+    pricing_comment = _text(
+        raw_pricing.get("comment"),
+        "Estimation fondée sur la configuration et le marché observé.",
+        300,
+    )
+    if _contains_sensitive_text(pricing_comment):
+        pricing_comment = "Estimation fondée sur la configuration et le marché observé."
+        dropped += 1
+    pricing = {**raw_pricing, "comment": pricing_comment}
+
+    raw_messages = raw.get("messages") if isinstance(raw.get("messages"), dict) else {}
+    request_proofs = _text(
+        raw_messages.get("request_proofs"),
+        "Bonjour, pouvez-vous transmettre les preuves manquantes en masquant vos données privées ?",
+        700,
+    )
+    make_offer = _text(
+        raw_messages.get("make_offer"),
+        "Bonjour, sous réserve des vérifications, je souhaite vous faire une offre.",
+        700,
+    )
+    if _contains_sensitive_text(request_proofs):
+        request_proofs = "Bonjour, pouvez-vous transmettre les preuves manquantes ?"
+        dropped += 1
+    if _contains_sensitive_text(make_offer):
+        make_offer = (
+            "Bonjour, je souhaite vous faire une offre sous réserve des vérifications."
+        )
+        dropped += 1
+
+    changes = [
+        _text(item, "", 300)
+        for item in raw.get("changes") or []
+        if isinstance(item, str) and item.strip() and not _contains_sensitive_text(item)
+    ][:4]
+    action_reason = _text(
+        raw.get("action_reason"),
+        "Cette action est la plus utile avant de poursuivre.",
+        300,
+    )
+    if _contains_sensitive_text(action_reason):
+        action_reason = "Cette action dépend uniquement des preuves vérifiables."
+        dropped += 1
+    return (
+        {
+            "confidence": _enum(raw.get("confidence"), CONFIDENCES, "MEDIUM"),
+            "headline": headline,
+            "summary": summary,
+            "scores": scores,
+            "pricing": pricing,
+            "risks": risks,
+            "positive_signals": positives,
+            "missing_information": missing,
+            "action_reason": action_reason,
+            "messages": {
+                "request_proofs": request_proofs,
+                "make_offer": make_offer,
+            },
+            "changes": changes,
+        },
+        dropped,
+    )
+
+
+def _score(candidate: dict[str, Any]) -> int:
+    scores = candidate["scores"]
+    return round(
+        sum(SCORE_WEIGHTS[key] * int(scores[key]["value"]) for key in SCORE_KEYS)
+    )
+
+
+def _candidate_price_cents(value: Any) -> int | None:
+    integer = _integer(value, -1)
+    if integer < 0:
+        return None
+    # The prompt asks for euros. This also tolerates a model accidentally returning cents.
+    return integer if integer > 20_000 else integer * 100
 
 
 def _pricing(
-    candidate: GeminiCandidateV2, normalized: dict[str, Any]
+    candidate: dict[str, Any], normalized: dict[str, Any]
 ) -> tuple[dict[str, Any], bool]:
-    value = candidate.pricing
-    asking = normalized.get("asking_price_cents")
-    asking = int(asking) if isinstance(asking, int) else value.asking_price_cents
-    valid = (
-        value.market_low_cents <= value.market_median_cents <= value.market_high_cents
-        and value.market_low_cents <= value.fair_price_cents <= value.market_high_cents
-        and value.opening_offer_cents
-        <= value.agreement_zone_low_cents
-        <= value.agreement_zone_high_cents
-        <= value.max_recommended_cents
+    value = (
+        candidate.get("pricing") if isinstance(candidate.get("pricing"), dict) else {}
     )
+    prices = {
+        key: _candidate_price_cents(value.get(source))
+        for key, source in {
+            "market_low_cents": "market_low",
+            "market_median_cents": "market_mid",
+            "market_high_cents": "market_high",
+            "fair_price_cents": "fair_price",
+            "opening_offer_cents": "first_offer",
+            "agreement_zone_low_cents": "agreement_low",
+            "agreement_zone_high_cents": "agreement_high",
+            "max_recommended_cents": "maximum",
+        }.items()
+    }
+    asking = normalized.get("asking_price_cents")
+    valid = all(item is not None for item in prices.values())
+    if valid:
+        valid = bool(
+            prices["market_low_cents"]
+            <= prices["market_median_cents"]
+            <= prices["market_high_cents"]
+            and prices["market_low_cents"]
+            <= prices["fair_price_cents"]
+            <= prices["market_high_cents"]
+            and prices["opening_offer_cents"]
+            <= prices["agreement_zone_low_cents"]
+            <= prices["agreement_zone_high_cents"]
+            <= prices["max_recommended_cents"]
+        )
     if not valid:
         return (
             {
                 "status": "UNAVAILABLE",
-                "currency": value.currency,
+                "currency": "EUR",
                 "asking_price_cents": asking,
-                "market_low_cents": None,
-                "market_median_cents": None,
-                "market_high_cents": None,
-                "fair_price_cents": None,
-                "opening_offer_cents": None,
-                "agreement_zone_low_cents": None,
-                "agreement_zone_high_cents": None,
-                "max_recommended_cents": None,
+                **{key: None for key in prices},
                 "potential_savings_cents": None,
                 "confidence": "LOW",
                 "commentary": "L’estimation disponible n’est pas assez cohérente pour conseiller un montant fiable.",
@@ -205,24 +550,21 @@ def _pricing(
             False,
         )
     agreement_midpoint = round(
-        (value.agreement_zone_low_cents + value.agreement_zone_high_cents) / 2
+        (prices["agreement_zone_low_cents"] + prices["agreement_zone_high_cents"]) / 2
     )
     return (
         {
             "status": "AVAILABLE",
-            "currency": value.currency,
+            "currency": "EUR",
             "asking_price_cents": asking,
-            "market_low_cents": value.market_low_cents,
-            "market_median_cents": value.market_median_cents,
-            "market_high_cents": value.market_high_cents,
-            "fair_price_cents": value.fair_price_cents,
-            "opening_offer_cents": value.opening_offer_cents,
-            "agreement_zone_low_cents": value.agreement_zone_low_cents,
-            "agreement_zone_high_cents": value.agreement_zone_high_cents,
-            "max_recommended_cents": value.max_recommended_cents,
-            "potential_savings_cents": max(asking - agreement_midpoint, 0),
-            "confidence": value.confidence.value,
-            "commentary": value.commentary,
+            **prices,
+            "potential_savings_cents": max(int(asking or 0) - agreement_midpoint, 0),
+            "confidence": _enum(value.get("confidence"), CONFIDENCES, "MEDIUM"),
+            "commentary": _text(
+                value.get("comment"),
+                "Estimation fondée sur la configuration et le marché observé.",
+                300,
+            ),
         },
         True,
     )
@@ -244,9 +586,9 @@ def _listing(normalized: dict[str, Any]) -> dict[str, Any]:
         if value
     )
     return {
-        "title": str(normalized.get("title") or "Annonce Leboncoin"),
+        "title": _text(normalized.get("title"), "Annonce Leboncoin", 300),
         "asking_price_cents": normalized.get("asking_price_cents"),
-        "currency": str(normalized.get("currency") or "EUR"),
+        "currency": "EUR",
         "thumbnail_url": None,
         "thumbnail_media_id": first_photo.get("media_id"),
         "location": location_label or None,
@@ -254,221 +596,166 @@ def _listing(normalized: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _checklist(
-    candidate: GeminiCandidateV2,
-    contracts: AnalysisContracts,
-    category: str,
-) -> dict[str, list[dict[str, Any]]]:
-    by_code = {
-        str(item["code"]): item
-        for item in contracts.checklists.get("items", [])
-        if isinstance(item, dict)
-        and category in item.get("categories", [])
-        and item.get("code")
-    }
-    mandatory = {
-        "BEFORE_MEETING": ["CONFIRM_SAFE_TRANSACTION", "NO_ADVANCE_PAYMENT"],
-        "DURING_MEETING": [
-            "IPHONE_CHECK_ACTIVATION_LOCK"
-            if category == "IPHONE"
-            else "MACBOOK_CHECK_ACTIVATION_LOCK"
-        ],
-        "BEFORE_PAYMENT": [
-            "WITNESS_SIGN_OUT_AND_ERASE",
-            "ACTIVATE_AS_BUYER",
-            "KEEP_SALE_PROOF",
-        ],
-    }
-    selected = {
-        "BEFORE_MEETING": candidate.checklist_selection.before_meeting,
-        "DURING_MEETING": candidate.checklist_selection.during_meeting,
-        "BEFORE_PAYMENT": candidate.checklist_selection.before_payment,
-    }
-    result: dict[str, list[dict[str, Any]]] = {
-        "before_meeting": [],
-        "during_meeting": [],
-        "before_payment": [],
-    }
-    key_map = {
-        "BEFORE_MEETING": "before_meeting",
-        "DURING_MEETING": "during_meeting",
-        "BEFORE_PAYMENT": "before_payment",
-    }
-    for phase, codes in selected.items():
-        ordered = list(dict.fromkeys([*mandatory[phase], *codes]))
-        for code in ordered:
-            item = by_code.get(code)
-            if item and item.get("phase") == phase:
-                result[key_map[phase]].append(
-                    {
-                        "code": code,
-                        "label": str(item["label"]),
-                        "critical": bool(item.get("critical")),
-                    }
-                )
-    return result
-
-
 def build_report(
-    candidate: GeminiCandidateV2,
+    candidate: dict[str, Any],
     *,
     normalized_listing: dict[str, Any],
     device_profile: dict[str, Any],
     purchase_mode: str,
-    contracts: AnalysisContracts | None = None,
+    schema_version: str | None = None,
 ) -> ProcessedReport:
-    contracts = contracts or get_contracts()
-    category = str(device_profile["category"])
-    risk_catalog = _risk_catalog(contracts, category)
-    positive_codes = _allowed_codes(contracts, category, "positive_signals")
-    missing_codes = _allowed_codes(contracts, category, "missing_information")
+    del purchase_mode
+    report_candidate = deepcopy(candidate)
+    category = str(device_profile.get("category") or "IPHONE")
+    catalog = risk_catalog(category)
+    allowed_positive = positive_codes(category)
+    allowed_missing = missing_codes(category)
+    guarded_visual_risk_count = _apply_visual_evidence_guardrails(
+        report_candidate,
+        normalized_listing=normalized_listing,
+        device_profile=device_profile,
+        catalog=catalog,
+    )
 
     risks: list[dict[str, Any]] = []
     unknown_codes = 0
-    sensitive_dropped = 0
     other_count = 0
-    for item in candidate.risks:
-        content = item.generated_content
-        if _contains_sensitive_text(
-            content.display_title, content.commentary, content.recommended_check
-        ):
-            sensitive_dropped += 1
+    for item in report_candidate.get("risks") or []:
+        code = item["code"] if item["code"] in catalog else "OTHER"
+        if code == "OTHER" and not item.get("evidence"):
             continue
-        code = item.code if item.code in risk_catalog else "OTHER"
         if code == "OTHER":
-            unknown_codes += int(item.code != "OTHER")
+            unknown_codes += int(item["code"] != "OTHER")
             other_count += 1
-        severity = item.severity
-        if (
-            code == "OTHER"
-            and SEVERITY_ORDER[severity] > SEVERITY_ORDER[Severity.MEDIUM]
-        ):
-            severity = Severity.MEDIUM
-        canonical = risk_catalog[code]
+        severity = item["severity"]
+        if code == "OTHER" and SEVERITY_ORDER[severity] > SEVERITY_ORDER["MEDIUM"]:
+            severity = "MEDIUM"
+        canonical = catalog[code]
         risks.append(
             {
                 "code": code,
-                "canonical_title": canonical["canonical_title"],
-                "status": item.status.value,
-                "severity": severity.value,
-                "display_title": content.display_title,
-                "commentary": content.commentary,
-                "recommended_check": content.recommended_check,
-                "blocking": bool(canonical.get("blocking")),
+                "canonical_title": canonical["title"],
+                "status": item["status"],
+                "severity": severity,
+                "display_title": item["title"],
+                "commentary": item["comment"],
+                "recommended_check": item["check"],
+                "blocking": bool(canonical.get("blocking"))
+                and not item.get("visual_guardrail"),
             }
         )
 
-    score = _score(candidate, contracts)
-    caps = contracts.scoring["caps"]
+    missing = [
+        item
+        for item in report_candidate.get("missing_information") or []
+        if item.get("code") in allowed_missing
+    ]
+    score = _score(report_candidate)
     confirmed_critical = any(
-        item["status"] == FindingStatus.CONFIRMED.value
-        and item["severity"] == Severity.CRITICAL.value
+        item["status"] == "CONFIRMED" and item["severity"] == "CRITICAL"
         for item in risks
     )
     blocking_unresolved = any(
-        item["blocking"] and item["status"] != FindingStatus.RESOLVED.value
-        for item in risks
-    )
+        item["blocking"] and item["status"] != "RESOLVED" for item in risks
+    ) or any(item["priority"] == "BLOCKING" for item in missing)
     high_unresolved = sum(
-        item["severity"] in {Severity.HIGH.value, Severity.CRITICAL.value}
-        and item["status"] != FindingStatus.RESOLVED.value
+        item["severity"] in {"HIGH", "CRITICAL"} and item["status"] != "RESOLVED"
         for item in risks
     )
     if confirmed_critical:
-        score = min(score, int(caps["CONFIRMED_CRITICAL"]))
+        score = min(score, SCORE_CAPS["confirmed_critical"])
     elif blocking_unresolved:
-        score = min(score, int(caps["BLOCKING_UNRESOLVED"]))
+        score = min(score, SCORE_CAPS["blocking_unresolved"])
     elif high_unresolved >= 2:
-        score = min(score, int(caps["TWO_HIGH_UNRESOLVED"]))
+        score = min(score, SCORE_CAPS["two_high_unresolved"])
 
-    pricing, pricing_valid = _pricing(candidate, normalized_listing)
+    pricing, pricing_valid = _pricing(report_candidate, normalized_listing)
     if confirmed_critical or score < 40:
         verdict = VerdictType.PASS
     elif blocking_unresolved or not pricing_valid or score <= 64:
         verdict = VerdictType.VERIFY_FIRST
-    elif score <= 79 or (
-        pricing["status"] == "AVAILABLE"
-        and pricing["asking_price_cents"] > pricing["fair_price_cents"]
-    ):
+    elif score <= 79 or pricing["asking_price_cents"] > pricing["fair_price_cents"]:
         verdict = VerdictType.NEGOTIATE
     else:
         verdict = VerdictType.BUY
 
-    if verdict == VerdictType.PASS:
-        action_type = ActionType.AVOID_LISTING
-    elif verdict == VerdictType.VERIFY_FIRST:
-        action_type = ActionType.REQUEST_PROOFS
-    elif verdict == VerdictType.NEGOTIATE:
-        action_type = ActionType.MAKE_OFFER
-    else:
-        action_type = (
-            ActionType.START_CHECKLIST
-            if purchase_mode == "face_to_face"
-            else candidate.primary_action_candidate.type
-        )
-    if (
-        action_type not in {ActionType.START_CHECKLIST, ActionType.MAKE_OFFER}
-        and verdict == VerdictType.BUY
-    ):
-        action_type = ActionType.START_CHECKLIST
-
+    action_type = {
+        VerdictType.PASS: ActionType.AVOID_LISTING,
+        VerdictType.VERIFY_FIRST: ActionType.REQUEST_PROOFS,
+        VerdictType.NEGOTIATE: ActionType.MAKE_OFFER,
+        VerdictType.BUY: ActionType.START_CHECKLIST,
+    }[verdict]
+    available_actions = {
+        VerdictType.PASS: [ActionType.AVOID_LISTING, ActionType.COMPARE_ANOTHER],
+        VerdictType.VERIFY_FIRST: [
+            ActionType.REQUEST_PROOFS,
+            ActionType.START_CHECKLIST,
+            ActionType.COMPARE_ANOTHER,
+        ],
+        VerdictType.NEGOTIATE: [
+            ActionType.MAKE_OFFER,
+            ActionType.REQUEST_PROOFS,
+            ActionType.START_CHECKLIST,
+            ActionType.COMPARE_ANOTHER,
+        ],
+        VerdictType.BUY: [
+            ActionType.START_CHECKLIST,
+            ActionType.MAKE_OFFER,
+            ActionType.COMPARE_ANOTHER,
+        ],
+    }[verdict]
+    active_severities = [
+        item["severity"] for item in risks if item["status"] != "RESOLVED"
+    ]
+    risk_level = max(active_severities, key=SEVERITY_ORDER.get, default="LOW")
     public_risks = [
         {key: value for key, value in item.items() if key != "blocking"}
         for item in risks
     ]
-    active_severities = [
-        Severity(item["severity"])
-        for item in risks
-        if item["status"] != FindingStatus.RESOLVED.value
-    ]
-    risk_level = max(
-        active_severities, key=lambda value: SEVERITY_ORDER[value], default=Severity.LOW
-    )
-    positives = [
-        {"code": item.code, "label": item.label}
-        for item in candidate.positive_signals
-        if item.code in positive_codes and not _contains_sensitive_text(item.label)
-    ]
-    missing = [
-        item.model_dump(mode="json")
-        for item in candidate.missing_information
-        if item.code in missing_codes
-        and not _contains_sensitive_text(item.label, item.question)
-    ]
     breakdown = {
-        key: {"score": value["score"], "rationale": value["rationale"]}
-        for key, value in candidate.score_breakdown.model_dump(mode="json").items()
+        PUBLIC_SCORE_KEYS[key]: {
+            "score": report_candidate["scores"][key]["value"],
+            "rationale": report_candidate["scores"][key]["reason"],
+        }
+        for key in SCORE_KEYS
     }
+    positives = [
+        item
+        for item in report_candidate.get("positive_signals") or []
+        if item.get("code") in allowed_positive
+    ]
+    messages = report_candidate["messages"]
     result = AnalysisResult.model_validate(
         {
-            "schema_version": contracts.manifest["schema_version"],
+            "schema_version": schema_version or REPORT_SCHEMA_VERSION,
             "template_id": verdict.value,
             "listing": _listing(normalized_listing),
             "device": device_profile,
             "verdict": {
                 "type": verdict.value,
                 "deal_score": score,
-                "confidence": candidate.confidence.value,
-                "headline": candidate.headline,
-                "explanation": candidate.summary,
+                "confidence": report_candidate["confidence"],
+                "headline": report_candidate["headline"],
+                "explanation": report_candidate["summary"],
             },
             "score_breakdown": breakdown,
             "primary_action": {
                 "type": action_type.value,
                 "label": ACTION_LABELS[action_type],
-                "reason": candidate.primary_action_candidate.reason,
+                "reason": report_candidate["action_reason"],
             },
             "pricing": pricing,
-            "risks": {"level": risk_level.value, "items": public_risks},
+            "risks": {"level": risk_level, "items": public_risks},
             "positive_signals": positives,
             "missing_information": missing,
-            "messages": candidate.messages.model_dump(mode="json"),
-            "checklist": _checklist(candidate, contracts, category),
-            "available_actions": list(
-                dict.fromkeys([action_type, *candidate.available_actions])
-            )[:5],
-            "expert_note": candidate.expert_note,
-            "change_summary": candidate.change_summary,
+            "messages": {
+                **messages,
+                "decline": "Merci pour votre réponse. Je préfère ne pas donner suite.",
+            },
+            "checklist": CHECKLISTS[category],
+            "available_actions": available_actions,
+            "expert_note": None,
+            "change_summary": report_candidate.get("changes") or [],
         }
     )
     return ProcessedReport(
@@ -476,7 +763,7 @@ def build_report(
         metadata={
             "unknown_taxonomy_code_count": unknown_codes,
             "other_risk_count": other_count,
-            "sensitive_finding_dropped_count": sensitive_dropped,
+            "guarded_visual_risk_count": guarded_visual_risk_count,
             "pricing_available": pricing_valid,
             "final_score": score,
             "final_verdict": verdict.value,

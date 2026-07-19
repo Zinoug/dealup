@@ -17,22 +17,21 @@ It must:
 3. load the private analysis input;
 4. call Piloterr only when the stored private payload is absent, notably refresh;
 5. archive at most 10 listing photos and accept at most 10 seller media in private S3;
-6. call Gemini exactly once with text, relevant images, Google Search, and `GeminiCandidateV2` structured output;
-7. reject sensitive inferences and post-process score, caps, verdict, pricing, action, checklist labels, and template deterministically;
-8. validate and persist the internal candidate separately from `PublicReportV2`;
+6. call Gemini exactly once with concise natural-language input, relevant images, Google Search, and a compact JSON-only answer;
+7. parse the first JSON object tolerantly, reject sensitive inferences, and post-process score, caps, verdict, pricing, action, checklist labels, and template deterministically;
+8. persist the compact internal candidate separately from the public report;
 9. fail safely and reverse the quota debit exactly once;
-10. notify only after successful persistence and only when the configured duration threshold is crossed.
 
 ## Boundaries
 
 - `handler.py` validates transport and wires dependencies only.
 - `services/` orchestrates the use case.
 - `repositories/` contains PostgreSQL statements and transaction boundaries.
-- `integrations/` contains Piloterr, Gemini, S3, Expo Push, and PostHog.
-- `schemas/` owns the exact Gemini candidate and public result contracts.
-- `../../contracts/analysis/` owns prompts, taxonomies, scoring, checklists, catalog, and version manifest.
+- `integrations/` contains Piloterr, Gemini, S3, and PostHog.
+- `schemas/` owns the public result contract only.
+- `analysis_worker/rules.py` owns the worker taxonomies, scoring, checklists, and audit metadata. Git versions it; do not create suffixed rule or prompt files.
 
-Gemini receives only the common and detected-category taxonomies. It may produce bounded personalized text, but it never controls codes, final score/verdict, computed amounts, section order, assets, or checklist wording. Unknown codes become a measured `OTHER` capped at `MEDIUM`.
+The system instruction and raw JSON example live directly in `integrations/gemini.py` so a Lambda deployment is self-contained. Never send a JSON Schema through `response_format`. Gemini receives only useful non-empty fields plus the common and detected-category taxonomies. It may produce bounded personalized text, but it never controls final score/verdict, computed amounts, section order, assets, or checklist wording. Unknown codes become a measured `OTHER` capped at `MEDIUM`.
 
 Never log raw inputs, prompts, seller context, image URLs, API keys, or model output. Never keep a DB transaction open during a provider call. Never use Gemini server-side conversation storage unless the privacy decision changes explicitly.
 

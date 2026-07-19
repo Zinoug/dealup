@@ -20,5 +20,6 @@ def test_openapi_contract_is_generated(client) -> None:
     assert "/v1/catalog/compatible-devices" in paths
     assert "/v1/analyses" in paths
     assert "delete" in paths["/v1/analyses/{analysis_id}"]
+    assert "/v1/analyses/{analysis_id}/media" in paths
     assert "/v1/analyses/{analysis_id}/reanalyze" in paths
     assert "/v1/uploads/{media_id}/complete" in paths

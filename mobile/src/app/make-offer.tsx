@@ -4,17 +4,14 @@ import { Copy } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, GlassCard, LimeButton } from '@/components/reference-ui';
-import { demoAnalysis, reportFixtures } from '@/data/mock';
-import { useAppStore } from '@/store/app-store';
+import { useAnalysisReport } from '@/hooks/use-analysis-report';
 import { colors, layout } from '@/theme/tokens';
 import { formatEuros } from '@/utils/format';
 
 export default function MakeOfferScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { analyses } = useAppStore();
-  const report = analyses.find((item) => item.id === id)
-    ?? Object.values(reportFixtures).find((item) => item.id === id)
-    ?? demoAnalysis;
+  const { report } = useAnalysisReport(id);
+  if (!report) return <DarkSafeScreen variant="focus"><DarkHeader title="Faire une offre" /></DarkSafeScreen>;
   const pricing = report.pricing;
   const opening = pricing.openingOfferCents;
   const agreementLow = pricing.agreementZoneLowCents;

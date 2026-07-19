@@ -24,6 +24,8 @@ from app.schemas.analysis import (
     AnalysisAccepted,
     AnalysisCreate,
     AnalysisList,
+    AnalysisMediaItem,
+    AnalysisMediaList,
     AnalysisRead,
     AnalysisResult,
     AnalysisSummary,
@@ -43,7 +45,7 @@ class AnalysisService:
         self.session = session
         self.repo = AnalysisRepository(session)
         self.listings = ListingRepository(session)
-        self.media = MediaRepository(session)
+        self.media_repo = MediaRepository(session)
         self.usage = UsageService(session)
         self.invoker = invoker
         self.analytics = analytics
@@ -51,24 +53,17 @@ class AnalysisService:
         self.deletions = DeletionRepository(session)
 
     @staticmethod
-    def _contract_versions() -> dict[str, str]:
-        return get_analysis_contract().versions()
+    def _engine_revision() -> str:
+        return get_analysis_contract().engine_revision
 
     @staticmethod
-    def _version_fields(versions: dict[str, str]) -> dict[str, str]:
-        return {
-            "schema_version": versions["schema_version"],
-            "prompt_version": versions["prompt_version"],
-            "taxonomy_version": versions["taxonomy_version"],
-            "scoring_version": versions["scoring_version"],
-            "checklist_version": versions["checklist_version"],
-            "device_catalog_version": versions["device_catalog_version"],
-        }
+    def _snapshot(analysis: Analysis) -> dict[str, object]:
+        return analysis.input_snapshot or {}
 
     def _media_descriptors(
         self, user: User, media_ids: list[str]
     ) -> list[dict[str, object]]:
-        media = self.media.get_owned_many(media_ids, user.id)
+        media = self.media_repo.get_owned_many(media_ids, user.id)
         if len(media) != len(set(media_ids)) or any(
             item.status != "ready" for item in media
         ):
@@ -180,7 +175,13 @@ class AnalysisService:
             self._validate_replay(existing, fingerprint)
             return self._accepted(existing, None)
         descriptors = self._media_descriptors(user, data.seller_context.media_ids)
-        versions = self._contract_versions()
+        input_snapshot = {
+            "source_url": identification.source_url,
+            "external_listing_id": identification.external_id,
+            "listing_payload": identification.payload,
+            "normalized_listing": identification.normalized_payload,
+            "device_profile": identification.device_profile,
+        }
         analysis, created = self._add_idempotent(
             user,
             Analysis(
@@ -189,18 +190,15 @@ class AnalysisService:
                 kind=AnalysisKind.INITIAL,
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
-                source_url=identification.source_url,
-                external_listing_id=identification.external_id,
                 purchase_mode=data.purchase_mode,
-                seller_contacted=data.seller_context.already_contacted,
-                seller_reply_text=data.seller_context.reply_text,
-                seller_media=descriptors,
-                listing_payload=identification.payload,
-                normalized_listing=identification.normalized_payload,
+                input_snapshot=input_snapshot,
+                seller_context={
+                    "already_contacted": data.seller_context.already_contacted,
+                    "reply_text": data.seller_context.reply_text,
+                    "media": descriptors,
+                },
                 device_category=identification.device_category,
-                device_profile=identification.device_profile,
-                input_fingerprint=fingerprint,
-                **self._version_fields(versions),
+                engine_revision=self._engine_revision(),
             ),
             idempotency_key,
             fingerprint,
@@ -208,7 +206,7 @@ class AnalysisService:
         if not created:
             return self._accepted(analysis, None)
         analysis.root_analysis_id = analysis.id
-        self.media.attach_to_analysis(
+        self.media_repo.attach_to_analysis(
             data.seller_context.media_ids, user.id, analysis.id
         )
         reservation = self.usage.reserve(user, analysis.id)
@@ -216,7 +214,7 @@ class AnalysisService:
         self.session.commit()
         self._dispatch(analysis, charged=True)
         self.analytics.capture(
-            user.clerk_user_id,
+            user.id,
             "analysis_created",
             {"analysis_id": analysis.id, "purchase_mode": data.purchase_mode.value},
         )
@@ -247,6 +245,7 @@ class AnalysisService:
                 409,
             )
         descriptors = self._media_descriptors(user, data.media_ids)
+        parent_snapshot = dict(self._snapshot(parent))
         analysis, created = self._add_idempotent(
             user,
             Analysis(
@@ -256,37 +255,27 @@ class AnalysisService:
                 kind=AnalysisKind.REANALYSIS,
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
-                source_url=parent.source_url,
-                external_listing_id=parent.external_listing_id,
                 purchase_mode=data.purchase_mode or parent.purchase_mode,
-                seller_contacted=True,
-                seller_reply_text=data.reply_text,
-                seller_media=descriptors,
-                listing_payload=parent.listing_payload,
-                normalized_listing=parent.normalized_listing,
+                input_snapshot=parent_snapshot,
+                seller_context={
+                    "already_contacted": True,
+                    "reply_text": data.reply_text,
+                    "media": descriptors,
+                },
                 device_category=parent.device_category,
-                device_profile=parent.device_profile,
-                parent_result=parent.result,
                 model_id=parent.model_id,
-                model_config=parent.model_config,
-                schema_version=parent.schema_version,
-                prompt_version=parent.prompt_version,
-                taxonomy_version=parent.taxonomy_version,
-                scoring_version=parent.scoring_version,
-                checklist_version=parent.checklist_version,
-                device_catalog_version=parent.device_catalog_version,
-                input_fingerprint=fingerprint,
+                engine_revision=parent.engine_revision,
             ),
             idempotency_key,
             fingerprint,
         )
         if not created:
             return self._accepted(analysis, None)
-        self.media.attach_to_analysis(data.media_ids, user.id, analysis.id)
+        self.media_repo.attach_to_analysis(data.media_ids, user.id, analysis.id)
         self.session.commit()
         self._dispatch(analysis, charged=False)
         self.analytics.capture(
-            user.clerk_user_id, "seller_reply_added", {"analysis_id": parent.id}
+            user.id, "seller_reply_added", {"analysis_id": parent.id}
         )
         return self._accepted(analysis, None)
 
@@ -307,7 +296,8 @@ class AnalysisService:
                 "Attends la fin de l’analyse avant de la rafraîchir.",
                 409,
             )
-        versions = self._contract_versions()
+        parent_snapshot = dict(self._snapshot(parent))
+        parent_snapshot["listing_payload"] = None
         analysis, created = self._add_idempotent(
             user,
             Analysis(
@@ -317,18 +307,11 @@ class AnalysisService:
                 kind=AnalysisKind.REFRESH,
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
-                source_url=parent.source_url,
-                external_listing_id=parent.external_listing_id,
                 purchase_mode=parent.purchase_mode,
-                seller_contacted=parent.seller_contacted,
-                seller_reply_text=parent.seller_reply_text,
-                seller_media=parent.seller_media,
-                listing_payload=None,
-                normalized_listing=parent.normalized_listing,
+                input_snapshot=parent_snapshot,
+                seller_context=dict(parent.seller_context or {}),
                 device_category=parent.device_category,
-                device_profile=parent.device_profile,
-                input_fingerprint=fingerprint,
-                **self._version_fields(versions),
+                engine_revision=self._engine_revision(),
             ),
             idempotency_key,
             fingerprint,
@@ -368,16 +351,16 @@ class AnalysisService:
             if str(public_payload.get("schema_version")) == "1.0":
                 public_payload = adapt_legacy_result(
                     public_payload,
-                    listing_payload=analysis.listing_payload,
-                    normalized_listing=analysis.normalized_listing,
-                    device_profile=analysis.device_profile,
+                    listing_payload=self._snapshot(analysis).get("listing_payload"),
+                    normalized_listing=self._snapshot(analysis).get("normalized_listing"),
+                    device_profile=self._snapshot(analysis).get("device_profile"),
                 )
             if public_payload:
                 result = AnalysisResult.model_validate(public_payload)
         if result:
             media_id = result.listing.thumbnail_media_id
             if media_id and self.storage:
-                media = self.media.get_owned(media_id, user_id)
+                media = self.media_repo.get_owned(media_id, user_id)
                 if media:
                     object_key = media.object_key
                     self.session.rollback()
@@ -413,7 +396,7 @@ class AnalysisService:
             raise DealUpError("INVALID_CURSOR", "Curseur invalide.", 422) from exc
         items, total = self.repo.list_owned(user.id, offset=offset, limit=limit)
         next_offset = offset + len(items)
-        summaries: list[AnalysisSummary] = []
+        pending_summaries: list[tuple[AnalysisSummary, str | None, str]] = []
         for root in items:
             latest = self.repo.latest_for_root(user.id, root)
             parsed = None
@@ -422,30 +405,95 @@ class AnalysisService:
                 if str(public_payload.get("schema_version")) == "1.0":
                     public_payload = adapt_legacy_result(
                         public_payload,
-                        listing_payload=latest.listing_payload,
-                        normalized_listing=latest.normalized_listing,
-                        device_profile=latest.device_profile,
+                        listing_payload=self._snapshot(latest).get("listing_payload"),
+                        normalized_listing=self._snapshot(latest).get("normalized_listing"),
+                        device_profile=self._snapshot(latest).get("device_profile"),
                     )
                 if public_payload:
                     parsed = AnalysisResult.model_validate(public_payload)
-            summaries.append(
-                AnalysisSummary(
-                    id=root.id,
-                    latest_analysis_id=latest.id,
-                    status=latest.status,
-                    kind=latest.kind,
-                    device=parsed.device if parsed else None,
-                    listing=parsed.listing if parsed else None,
-                    verdict=parsed.verdict if parsed else None,
-                    template_id=parsed.template_id if parsed else None,
-                    created_at=root.created_at,
-                    completed_at=latest.completed_at,
-                )
+            summary = AnalysisSummary(
+                id=root.id,
+                latest_analysis_id=latest.id,
+                status=latest.status,
+                kind=latest.kind,
+                device=parsed.device if parsed else None,
+                listing=parsed.listing if parsed else None,
+                verdict=parsed.verdict if parsed else None,
+                template_id=parsed.template_id if parsed else None,
+                created_at=root.created_at,
+                completed_at=latest.completed_at,
             )
+            pending_summaries.append(
+                (summary, parsed.listing.thumbnail_media_id if parsed else None, root.id)
+            )
+
+        media_ids = [media_id for _, media_id, _ in pending_summaries if media_id]
+        media_by_id = {
+            item.id: item.object_key
+            for item in self.media_repo.get_owned_many(media_ids, user.id)
+        }
+        fallback_by_root = self.media_repo.first_listing_by_roots(
+            [root_id for _, _, root_id in pending_summaries], user.id
+        )
+        self.session.rollback()
+        summaries: list[AnalysisSummary] = []
+        for summary, media_id, root_id in pending_summaries:
+            signed_url = None
+            object_key = media_by_id.get(media_id) if media_id else None
+            if not object_key and root_id in fallback_by_root:
+                object_key = fallback_by_root[root_id].object_key
+            if object_key and self.storage:
+                try:
+                    signed_url = self.storage.presign_read(object_key)
+                except DealUpError:
+                    signed_url = None
+            if summary.listing:
+                summary = summary.model_copy(
+                    update={
+                        "listing": summary.listing.model_copy(
+                            update={"thumbnail_url": signed_url}
+                        )
+                    }
+                )
+            summaries.append(summary)
         return AnalysisList(
             items=summaries,
             next_cursor=str(next_offset) if next_offset < total else None,
         )
+
+    def list_media(self, user: User, analysis_id: str) -> AnalysisMediaList:
+        analysis = self.repo.get_owned(analysis_id, user.id)
+        if not analysis:
+            raise DealUpError("ANALYSIS_NOT_FOUND", "Analyse introuvable.", 404)
+        root_id = analysis.root_analysis_id or analysis.id
+        chain = self.repo.chain_owned(user.id, root_id)
+        media = self.media_repo.list_for_analyses([item.id for item in chain], user.id)
+        descriptors = [
+            (item.id, item.role, item.ordinal, item.content_type, item.object_key)
+            for item in media
+            if item.status == "ready" and item.role in {"listing_photo", "seller_media"}
+        ]
+        self.session.rollback()
+        result: list[AnalysisMediaItem] = []
+        seen_keys: set[str] = set()
+        for media_id, role, ordinal, content_type, object_key in descriptors:
+            if object_key in seen_keys:
+                continue
+            seen_keys.add(object_key)
+            try:
+                url = self.storage.presign_read(object_key)
+            except DealUpError:
+                continue
+            result.append(
+                AnalysisMediaItem(
+                    id=media_id,
+                    role=role,
+                    ordinal=ordinal,
+                    content_type=content_type,
+                    url=url,
+                )
+            )
+        return AnalysisMediaList(items=result)
 
     def delete(self, user: User, analysis_id: str) -> None:
         analysis = self.repo.get_owned(analysis_id, user.id)
@@ -453,7 +501,7 @@ class AnalysisService:
             raise DealUpError("ANALYSIS_NOT_FOUND", "Analyse introuvable.", 404)
         root_id = analysis.root_analysis_id or analysis.id
         chain = self.repo.chain_owned(user.id, root_id)
-        media = self.media.list_for_analyses([item.id for item in chain], user.id)
+        media = self.media_repo.list_for_analyses([item.id for item in chain], user.id)
         deletion = self.deletions.add(
             user_id=user.id,
             kind="analysis",

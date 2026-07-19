@@ -30,7 +30,7 @@ flowchart LR
     API --> DB[("PostgreSQL")]
     API --> P["Piloterr"]
     API --> L["AWS Lambda"]
-    L --> G["Gemini — un appel structuré"]
+    L --> G["Gemini — un appel JSON"]
     L --> S3["S3 privé"]
     L -. "refresh" .-> P
     L --> DB
@@ -46,23 +46,24 @@ Le dépôt garde quatre projets indépendants :
 
 Il n’y a ni package racine, ni dossier `apps/`, ni déploiement automatique.
 
-Les contrats d’analyse partagés restent de simples fichiers JSON/TXT versionnés dans `contracts/analysis/`. Le worker valide un candidat Gemini interne, puis calcule de façon déterministe le score, le verdict, le prix, l’action et le template public.
+Le backend embarque son catalogue public et le worker ses règles d’analyse. Ils ne dépendent d’aucun dossier de contrats partagé au déploiement. Git versionne le code ; les versions enregistrées en base servent uniquement à l’audit. Gemini reçoit un dossier naturel compact et renvoie un petit JSON, puis le worker calcule de façon déterministe le score, le verdict, le prix, l’action et le template public.
 
 ## Prérequis
 
 - Node.js 22 et npm ;
 - Python 3.12 ;
 - Xcode pour le build iOS et l’extension de partage.
+- Docker pour PostgreSQL local.
 
 ## Mobile
 
-L’interface iOS couvre le parcours V1 complet et démarre par défaut avec des services simulés, sans trafic vers FastAPI, Clerk ou RevenueCat. Le laboratoire mock expose les quatre verdicts pour iPhone et MacBook. Le détail se trouve dans [`mobile/README.md`](mobile/README.md).
+L’interface iOS utilise FastAPI, Clerk et RevenueCat réels. Les seules données synthétiques restantes sont les huit fixtures du laboratoire visuel, compilées uniquement dans les outils de développement. Le détail se trouve dans [`mobile/README.md`](mobile/README.md).
 
 ```bash
 cd mobile
 cp .env.example .env
 npm install
-npm start
+npx expo run:ios
 ```
 
 Vérifications :
@@ -92,11 +93,14 @@ npm run build
 ## Backend
 
 ```bash
+# seulement si PostgreSQL local ne tourne pas déjà
+docker compose up -d postgres
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -117,6 +121,14 @@ pytest
 
 Point d’entrée Lambda : `handler.handler`.
 
+En local, laisser `ANALYSIS_INVOKE_MODE=disabled` dans FastAPI et lancer le worker réel en surveillance :
+
+```bash
+cd workers/analysis-lambda
+source .venv/bin/activate
+python run_local.py --watch
+```
+
 L’identification Piloterr est privée au parcours utilisateur. DealUp ne partage ni payload, ni résultat, ni cache d’annonce entre utilisateurs. Les photos analysées sont archivées dans S3 privé et supprimées avec l’analyse ou le compte.
 
 ## Intégrations
@@ -130,4 +142,4 @@ L’identification Piloterr est privée au parcours utilisateur. DealUp ne parta
 | Extraction Leboncoin | Piloterr |
 | Analyse multimodale et recherche web | Gemini |
 
-Les fichiers `.env.example` documentent les variables attendues. Aucun secret ne doit être ajouté au dépôt.
+Les fichiers `.env.example` documentent les variables attendues. Aucun secret ne doit être ajouté au dépôt. La procédure complète Clerk, RevenueCat, PostgreSQL, S3, Lambda, PostHog, Sentry et EAS est dans [docs/operations/configuration.md](docs/operations/configuration.md).

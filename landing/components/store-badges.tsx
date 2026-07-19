@@ -106,7 +106,7 @@ export function StoreBadges({
               alt=""
               className="store-modal__icon"
               height={72}
-              src="/dealup-app-icon.png"
+              src="/dealup-app-icon-256.webp"
               width={72}
             />
             <h2 id="store-modal-title">Bientôt disponible.</h2>

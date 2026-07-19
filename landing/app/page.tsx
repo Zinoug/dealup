@@ -71,9 +71,9 @@ export default function Home() {
         <section className="minimal-hero">
           <div className="page-container minimal-hero__inner">
             <div className="minimal-hero__copy">
-              <div aria-label="Note de 4,9 étoiles sur 5" className="minimal-social-proof">
+              <div aria-label="Note de 4,9 étoiles sur 5 sur l’App Store" className="minimal-social-proof">
                 <span aria-hidden="true">★★★★★</span>
-                <strong>4,9 étoiles</strong>
+                <strong>4,9 étoiles sur l’App Store</strong>
               </div>
               <h1>Vérifie l’appareil avant de l’acheter.</h1>
               <p>

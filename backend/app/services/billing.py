@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -99,18 +99,24 @@ class BillingService:
             user, _ = self.users.get_or_create(app_user_id)
 
         product_id = event.get("product_id")
+        transaction_id = event.get("transaction_id")
+        topup_source_id = (
+            f"revenuecat-transaction:{transaction_id}"
+            if isinstance(transaction_id, str) and transaction_id
+            else event_id
+        )
         if (
             user
             and product_id == self.settings.revenuecat_topup_product_id
             and event_type in {"INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"}
-            and not self.usage.has_source_event(event_id)
+            and not self.usage.has_source_event(topup_source_id)
         ):
             self.usage.add_event(
                 UsageEvent(
                     user_id=user.id,
                     kind=UsageEventKind.TOPUP_CREDIT,
                     amount=10,
-                    source_event_id=event_id,
+                    source_event_id=topup_source_id,
                 )
             )
 
@@ -155,14 +161,67 @@ class BillingService:
         self.session.commit()
 
     def sync(self, user: User) -> BillingSyncResponse:
+        existing = self.repo.get_subscription(user.id)
+        now = datetime.now(timezone.utc)
+        if self.settings.app_env != "production" and existing and existing.environment == "manual":
+            period_end = existing.current_period_ends_at
+            if period_end and not period_end.tzinfo:
+                period_end = period_end.replace(tzinfo=timezone.utc)
+            if (
+                existing.status == SubscriptionStatus.ACTIVE
+                and existing.plan in {SubscriptionPlan.WEEKLY, SubscriptionPlan.MONTHLY}
+                and period_end
+            ):
+                period_days = 7 if existing.plan == SubscriptionPlan.WEEKLY else 31
+                if existing.will_renew:
+                    while period_end <= now:
+                        existing.current_period_started_at = period_end
+                        period_end += timedelta(days=period_days)
+                    existing.current_period_ends_at = period_end
+                    self.session.commit()
+                if period_end > now:
+                    usage = UsageService(self.session).snapshot(user)
+                    return BillingSyncResponse(
+                        synced=True, plan=usage.plan, entitlement=usage.entitlement
+                    )
+
         payload = self.client.get_subscriber(user.clerk_user_id)
         subscriber = payload.get("subscriber", {})
         entitlements = (
             subscriber.get("entitlements", {}) if isinstance(subscriber, dict) else {}
         )
         entitlement = entitlements.get(self.settings.revenuecat_entitlement_id, {})
+
+        non_subscriptions = (
+            subscriber.get("non_subscriptions", {})
+            if isinstance(subscriber, dict)
+            else {}
+        )
+        topup_transactions = (
+            non_subscriptions.get(self.settings.revenuecat_topup_product_id, [])
+            if isinstance(non_subscriptions, dict)
+            else []
+        )
+        if isinstance(topup_transactions, list):
+            for transaction in topup_transactions:
+                if not isinstance(transaction, dict):
+                    continue
+                transaction_id = transaction.get("id") or transaction.get(
+                    "transaction_id"
+                )
+                if not isinstance(transaction_id, str) or not transaction_id:
+                    continue
+                source_id = f"revenuecat-transaction:{transaction_id}"
+                if not self.usage.has_source_event(source_id):
+                    self.usage.add_event(
+                        UsageEvent(
+                            user_id=user.id,
+                            kind=UsageEventKind.TOPUP_CREDIT,
+                            amount=10,
+                            source_event_id=source_id,
+                        )
+                    )
         subscription = self.repo.get_or_create_subscription(user.id)
-        now = datetime.now(timezone.utc)
         expires_at = (
             _from_iso(entitlement.get("expires_date"))
             if isinstance(entitlement, dict)

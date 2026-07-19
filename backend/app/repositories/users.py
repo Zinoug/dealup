@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,9 @@ class UserRepository:
         self.session.add(user)
         self.session.flush()
         return user, True
+
+    def touch(self, user: User) -> None:
+        user.last_seen_at = datetime.now(timezone.utc)
 
     def delete_private_data(self, user: User) -> None:
         self.session.execute(delete(Device).where(Device.user_id == user.id))

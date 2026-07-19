@@ -12,7 +12,7 @@ import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
 
 export default function SellerContextScreen() {
-  const { sellerReply, sellerMediaUris, setSellerContext } = useAppStore();
+  const { sellerReply, sellerMediaUris, setSellerContext, startAnalysis, isBusy, usage } = useAppStore();
   const [reply, setReply] = useState(sellerReply);
   const [images, setImages] = useState(sellerMediaUris);
 
@@ -21,16 +21,26 @@ export default function SellerContextScreen() {
     if (!result.canceled) setImages((current) => [...current, ...result.assets.map((asset) => asset.uri)].slice(0, 5));
   };
 
-  const continueFlow = () => {
-    setSellerContext(true, reply.trim(), images);
-    router.push('/analysis-confirm');
+  const launchAnalysis = async (includeSellerContext: boolean) => {
+    if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
+      router.replace('/quota');
+      return;
+    }
+    const normalizedReply = includeSellerContext ? reply.trim() : '';
+    const normalizedImages = includeSellerContext ? images : [];
+    setSellerContext(includeSellerContext, normalizedReply, normalizedImages);
+    const id = await startAnalysis({
+      alreadyContacted: includeSellerContext,
+      sellerReply: normalizedReply,
+      sellerMediaUris: normalizedImages,
+    });
+    if (id) router.replace({ pathname: '/analysis-progress', params: { id } });
   };
 
   return (
     <Screen scroll keyboard contentStyle={styles.content}>
       <ScreenHeader back compact />
       <View style={styles.copy}>
-        <Text style={styles.eyebrow}>CONTEXTE VENDEUR</Text>
         <Text style={styles.title}>Qu’est-ce qu’il t’a répondu ?</Text>
         <Text style={styles.subtitle}>Colle son message tel quel. Tu peux aussi ajouter des captures ou les photos qu’il vient d’envoyer.</Text>
       </View>
@@ -43,7 +53,8 @@ export default function SellerContextScreen() {
           multiline
           textAlignVertical="top"
           placeholder="Ex. Oui, j’ai la facture. La batterie est à 91 %…"
-          placeholderTextColor={colors.inkSoft}
+          placeholderTextColor={colors.lightMuted}
+          selectionColor={colors.brand600}
           style={styles.textarea}
           accessibilityLabel="Réponse du vendeur"
         />
@@ -60,7 +71,7 @@ export default function SellerContextScreen() {
       </View>
 
       <View style={styles.privacy}><LockKeyhole size={18} color={colors.brand800} /><Text style={styles.privacyText}>Ces échanges restent privés. Ils ne servent jamais à l’analyse d’un autre utilisateur.</Text></View>
-      <View style={styles.footer}><BrandButton label="Continuer vers l’analyse" onPress={continueFlow} /><BrandButton label="Continuer sans réponse" variant="ghost" onPress={() => { setSellerContext(false); router.push('/analysis-confirm'); }} /></View>
+      <View style={styles.footer}><BrandButton label="Lancer l’analyse" loading={isBusy} onPress={() => void launchAnalysis(true)} /><BrandButton label="Lancer sans réponse" variant="ghost" disabled={isBusy} onPress={() => void launchAnalysis(false)} /></View>
     </Screen>
   );
 }
@@ -68,14 +79,13 @@ export default function SellerContextScreen() {
 const styles = StyleSheet.create({
   content: { paddingBottom: spacing.xl },
   copy: { paddingHorizontal: layout.gutter },
-  eyebrow: { ...type.caption, color: colors.brand700, letterSpacing: 1 },
-  title: { ...type.h1, color: colors.ink, marginTop: spacing.xs },
+  title: { ...type.h1, color: colors.ink },
   subtitle: { ...type.body, color: colors.inkMuted, marginTop: spacing.sm },
   form: { paddingHorizontal: layout.gutter, marginTop: spacing.xl, gap: spacing.sm },
   labelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   label: { ...type.label, color: colors.ink, flex: 1 },
   optional: { ...type.caption, color: colors.inkSoft },
-  textarea: { minHeight: 150, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radii.lg, backgroundColor: colors.white, padding: spacing.md, ...type.body, color: colors.ink },
+  textarea: { minHeight: 150, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radii.lg, backgroundColor: colors.white, padding: spacing.md, ...type.body, color: colors.lightInk },
   images: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   imageShell: { width: 84, height: 84, borderRadius: radii.md, overflow: 'visible' },
   image: { width: '100%', height: '100%', borderRadius: radii.md, backgroundColor: colors.border },

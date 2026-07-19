@@ -16,7 +16,7 @@ class AnalysisInvoker:
         if self.settings.analysis_invoke_mode == "disabled":
             return
         try:
-            client = boto3.client("lambda", region_name=self.settings.aws_region)
+            client = boto3.client("lambda", **_client_options(self.settings))
             response: dict[str, Any] = client.invoke(
                 FunctionName=self.settings.analysis_lambda_name,
                 InvocationType="Event",
@@ -50,7 +50,7 @@ class MediaStorage:
                 503,
             )
         try:
-            client = boto3.client("s3", region_name=self.settings.aws_region)
+            client = boto3.client("s3", **_client_options(self.settings))
             return client.generate_presigned_post(
                 Bucket=self.settings.media_bucket,
                 Key=object_key,
@@ -72,7 +72,7 @@ class MediaStorage:
         if not self.settings.media_bucket:
             return
         try:
-            boto3.client("s3", region_name=self.settings.aws_region).delete_object(
+            boto3.client("s3", **_client_options(self.settings)).delete_object(
                 Bucket=self.settings.media_bucket, Key=object_key
             )
         except (BotoCoreError, ClientError) as exc:
@@ -90,7 +90,7 @@ class MediaStorage:
                 503,
             )
         try:
-            return boto3.client("s3", region_name=self.settings.aws_region).head_object(
+            return boto3.client("s3", **_client_options(self.settings)).head_object(
                 Bucket=self.settings.media_bucket, Key=object_key
             )
         except (BotoCoreError, ClientError) as exc:
@@ -107,7 +107,7 @@ class MediaStorage:
             )
         try:
             return boto3.client(
-                "s3", region_name=self.settings.aws_region
+                "s3", **_client_options(self.settings)
             ).generate_presigned_url(
                 "get_object",
                 Params={"Bucket": self.settings.media_bucket, "Key": object_key},
@@ -119,3 +119,17 @@ class MediaStorage:
                 "L’image est temporairement indisponible.",
                 503,
             ) from exc
+
+
+def _client_options(settings: Settings) -> dict[str, str]:
+    options = {"region_name": settings.aws_region}
+    if settings.aws_access_key_id and settings.aws_secret_access_key:
+        options.update(
+            {
+                "aws_access_key_id": settings.aws_access_key_id,
+                "aws_secret_access_key": settings.aws_secret_access_key,
+            }
+        )
+        if settings.aws_session_token:
+            options["aws_session_token"] = settings.aws_session_token
+    return options

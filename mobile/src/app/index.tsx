@@ -21,8 +21,8 @@ export default function IndexScreen() {
     );
   }
 
-  if (!onboardingComplete) return <Redirect href="/onboarding" />;
   if (!isSignedIn) return <Redirect href="/auth" />;
+  if (!onboardingComplete) return <Redirect href="/onboarding" />;
   return <Redirect href="/(tabs)" />;
 }
 

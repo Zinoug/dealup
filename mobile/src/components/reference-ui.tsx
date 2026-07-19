@@ -2,7 +2,7 @@ import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { ArrowLeft, Camera, Check, Heart, History, Home, UserRound } from 'lucide-react-native';
+import { ArrowLeft, Check, Heart, History, Home, UserRound } from 'lucide-react-native';
 import type { PropsWithChildren, ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -58,19 +58,6 @@ export function DarkHeader({ title, back = true, right }: { title?: string; back
   );
 }
 
-export function ProductImagePlaceholder({ size = 64, large = false }: { size?: number; large?: boolean }) {
-  return (
-    <View style={[styles.product, large && styles.productLarge, !large && { width: size, height: size }]}>
-      <View style={styles.phoneShape}><View style={styles.cameras}><View style={styles.cameraDot} /><View style={styles.cameraDot} /><View style={styles.cameraDot} /></View></View>
-      {large ? <View style={styles.assetBadge}><Camera size={12} color={colors.white} /><Text style={styles.assetText}>PHOTO À FOURNIR</Text></View> : null}
-    </View>
-  );
-}
-
-export function SourcePill() {
-  return <View style={styles.sourcePill}><View style={styles.sourceIcon} /><Text style={styles.sourceText}>Leboncoin</Text></View>;
-}
-
 export function TinyCheck({ dim = false, warning = false }: { dim?: boolean; warning?: boolean }) {
   return <View style={[styles.tinyCheck, dim && styles.tinyDim, warning && styles.tinyWarning]}><Check size={12} color={warning ? colors.amber : colors.brand900} strokeWidth={3} /></View>;
 }
@@ -102,13 +89,6 @@ const styles = StyleSheet.create({
   header: { minHeight: 50, paddingHorizontal: layout.gutter, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerButton: { width: 44, height: 44, marginLeft: -10, alignItems: 'center', justifyContent: 'center' }, headerRight: { width: 44, alignItems: 'flex-end' },
   headerTitle: { ...type.label, color: colors.white },
-  product: { borderRadius: 12, backgroundColor: '#C7B99B', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  productLarge: { width: '72%', aspectRatio: 1.05, alignSelf: 'center', borderRadius: 18, backgroundColor: '#D2C4A5' },
-  phoneShape: { width: '53%', height: '82%', borderRadius: 18, backgroundColor: '#A88F61', transform: [{ rotate: '-8deg' }], padding: 8 },
-  cameras: { flexDirection: 'row', flexWrap: 'wrap', width: 34, gap: 3 }, cameraDot: { width: 14, height: 14, borderRadius: 7, backgroundColor: '#111712', borderWidth: 2, borderColor: '#6F624C' },
-  assetBadge: { position: 'absolute', bottom: 8, right: 8, flexDirection: 'row', gap: 4, backgroundColor: 'rgba(0,0,0,0.56)', paddingHorizontal: 7, paddingVertical: 4, borderRadius: 99 }, assetText: { color: colors.white, fontSize: 8, fontWeight: '700' },
-  sourcePill: { minHeight: 36, borderRadius: radii.pill, paddingHorizontal: 12, flexDirection: 'row', gap: 7, alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(10,50,39,0.9)' },
-  sourceIcon: { width: 18, height: 18, borderRadius: 5, backgroundColor: '#FF641E' }, sourceText: { ...type.small, color: colors.white, fontWeight: '600' },
   tinyCheck: { width: 20, height: 20, borderRadius: 10, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' }, tinyDim: { backgroundColor: 'transparent', borderWidth: 1, borderColor: colors.brand500 }, tinyWarning: { backgroundColor: 'transparent', borderColor: colors.amber },
   dockShell: { position: 'absolute', left: 18, right: 18, bottom: 10 }, dock: { height: 72, borderRadius: 36, overflow: 'hidden', flexDirection: 'row', borderWidth: 1, borderColor: colors.border }, dockDark: { backgroundColor: 'rgba(3,48,34,0.74)' }, dockLight: { backgroundColor: 'rgba(248,248,242,0.76)', borderColor: 'rgba(90,100,92,0.18)' },
   dockItem: { flex: 1, alignItems: 'center', justifyContent: 'center' }, dockActive: { backgroundColor: 'rgba(143,255,57,0.08)' }, dockLine: { position: 'absolute', bottom: 4, width: 28, height: 3, borderRadius: 2, backgroundColor: colors.lime },

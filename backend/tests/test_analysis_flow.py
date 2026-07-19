@@ -7,6 +7,7 @@ from app.db.session import session_factory
 from app.models import (
     Analysis,
     AnalysisStatus,
+    ListingIdentification,
     Subscription,
     SubscriptionPlan,
     SubscriptionStatus,
@@ -21,14 +22,52 @@ class FakePiloterr:
             "list_id": 3012186547,
             "subject": "iPhone 14 128 Go",
             "price": [420],
-            "price_cents": [42000],
+            "price_cents": 42000,
             "status": "active",
-            "images": {"urls": ["https://img.example.test/iphone.jpg"]},
+            "images": {
+                "urls": [
+                    "https://img.example.test/iphone-1.jpg?rule=ad-image",
+                    "https://img.example.test/iphone-2.jpg?rule=ad-image",
+                ],
+                "urls_large": [
+                    "https://img.example.test/iphone-1.jpg?rule=ad-large",
+                    "https://img.example.test/iphone-2.jpg?rule=ad-large",
+                ],
+                "urls_thumb": [
+                    "https://img.example.test/iphone-1.jpg?rule=ad-thumb",
+                    "https://img.example.test/iphone-2.jpg?rule=ad-thumb",
+                ],
+                "thumb_url": "https://img.example.test/iphone-1.jpg?rule=ad-thumb",
+                "nb_images": 2,
+            },
             "location": {"city": "Paris", "zipcode": "75011"},
             "attributes": [
                 {"key": "brand", "value_label": "Apple"},
                 {"key": "model", "value_label": "iPhone 14"},
+                {
+                    "key": "profile_picture_url",
+                    "value_label": "https://img.example.test/private-profile.jpg",
+                    "generic": False,
+                },
+                {"key": "rating_score", "value": "0.68", "generic": False},
+                {"key": "rating_count", "value": "4", "generic": False},
+                {
+                    "key": "condition",
+                    "value": "tresbonetat",
+                    "value_label": "Très bon état",
+                    "generic": True,
+                },
+                {
+                    "key": "phone_memory",
+                    "value": "128go",
+                    "value_label": "128 Go",
+                    "generic": True,
+                },
             ],
+            "counters": {"favorites": 12},
+            "first_publication_date": "2026-06-01 20:33:44",
+            "index_date": "2026-06-10 20:00:35",
+            "is_boosted": True,
         }
 
 
@@ -198,6 +237,50 @@ def test_catalog_is_public_and_lists_both_v1_categories(client) -> None:
         "IPHONE",
         "MACBOOK",
     }
+
+
+def test_identification_exposes_private_preview_and_normalizes_large_photos(
+    client,
+) -> None:
+    from app.main import app
+
+    app.dependency_overrides[piloterr_dependency] = lambda: FakePiloterr()
+    try:
+        response = client.post(
+            "/v1/listings/identify",
+            json={
+                "url": "https://www.leboncoin.fr/ad/telephones_objets_connectes/3012186547"
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        teaser = payload["teaser"]
+        assert teaser["asking_price_cents"] == 42000
+        assert teaser["thumbnail_url"].endswith("rule=ad-large")
+        assert teaser["preview_photo_urls"] == [
+            "https://img.example.test/iphone-1.jpg?rule=ad-large",
+            "https://img.example.test/iphone-2.jpg?rule=ad-large",
+        ]
+        assert teaser["photo_count"] == 2
+        assert teaser["facts"] == ["Très bon état", "128 Go"]
+
+        with session_factory()() as session:
+            item = session.get(ListingIdentification, payload["identification_id"])
+            assert item is not None
+            assert [photo["url"] for photo in item.normalized_payload["photos"]] == [
+                "https://img.example.test/iphone-1.jpg?rule=ad-large",
+                "https://img.example.test/iphone-2.jpg?rule=ad-large",
+            ]
+            assert item.normalized_payload["seller_public"] == {
+                "account_age": None,
+                "rating_count": 4,
+            }
+            assert item.normalized_payload["publication"]["favorite_count"] == 12
+            assert "profile_picture_url" not in {
+                attribute["key"] for attribute in item.normalized_payload["attributes"]
+            }
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_macbook_is_supported_and_intel_is_rejected_before_quota(client) -> None:

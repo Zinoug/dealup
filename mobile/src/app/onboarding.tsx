@@ -1,128 +1,174 @@
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { BarChart3, Check, FileSearch, Image as ImageIcon, ShieldCheck } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { BarChart3, Bell, Check, FileSearch, Image as ImageIcon, ShieldCheck } from 'lucide-react-native';
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { EntryBrand, EntryPrimaryButton, EntryScreen } from '@/components/entry-ui';
-import { ProductImagePlaceholder } from '@/components/reference-ui';
+import { DecisionClarityGraphic, PriceComparisonGraphic, ResearchSpeedGraphic } from '@/components/onboarding-value-graphics';
 import { useAppStore } from '@/store/app-store';
-import { colors, layout, radii, type } from '@/theme/tokens';
+import { colors } from '@/theme/tokens';
 
 const analysisSteps = [
-  { label: 'Lecture de l’annonce', detail: '', icon: FileSearch },
-  { label: 'Inspection des photos', detail: 'Analyse des images…', icon: ImageIcon },
-  { label: 'Estimation du juste prix', detail: '', icon: BarChart3 },
-  { label: 'Verdict et plan d’action', detail: '', icon: ShieldCheck },
-];
+  { label: 'Lecture de l’annonce', icon: FileSearch },
+  { label: 'Inspection des photos', icon: ImageIcon },
+  { label: 'Estimation du juste prix', icon: BarChart3 },
+  { label: 'Verdict et plan d’action', icon: ShieldCheck },
+] as const;
 
 export default function OnboardingScreen() {
-  const [screen, setScreen] = useState<'welcome' | 'demo'>('welcome');
-  const [step, setStep] = useState(1);
+  const [page, setPage] = useState(0);
+  const [requesting, setRequesting] = useState(false);
   const { height } = useWindowDimensions();
-  const { completeOnboarding } = useAppStore();
+  const compact = height < 760;
+  const { completeOnboarding, pendingUrl, requestNotifications } = useAppStore();
 
-  useEffect(() => {
-    if (screen !== 'demo') return;
-    const progressTimer = setInterval(() => setStep((value) => Math.min(3, value + 1)), 1050);
-    const finishTimer = setTimeout(() => {
-      completeOnboarding();
-      router.replace('/auth');
-    }, 5200);
-    return () => { clearInterval(progressTimer); clearTimeout(finishTimer); };
-  }, [completeOnboarding, screen]);
-
-  const openLogin = () => {
+  const finish = () => {
     completeOnboarding();
-    router.push('/auth');
+    router.replace(pendingUrl ? '/handle-share' : '/(tabs)');
+  };
+  const enableNotifications = async () => {
+    setRequesting(true);
+    await requestNotifications();
+    setRequesting(false);
+    finish();
   };
 
-  if (screen === 'demo') {
-    return (
-      <EntryScreen style={styles.demoSafe}>
-        <View style={[styles.demoBrand, { marginTop: height > 850 ? 54 : 24 }]}><EntryBrand size={86} /></View>
-        <Text style={styles.demoTitle}>On soulève{`\n`}<Text style={styles.lime}>chaque</Text> détail.</Text>
-        <View style={styles.listingCard}>
-          <ProductImagePlaceholder size={76} />
-          <View style={styles.listingCopy}><Text style={styles.product}>iPhone 15 Pro 256 Go</Text><Text style={styles.meta}>750 € · Paris 11e</Text></View>
-        </View>
-        <View style={styles.stepsCard}>
-          {analysisSteps.map((item, index) => {
-            const done = index < step;
-            const current = index === step;
-            const Icon = item.icon;
-            return (
-              <View key={item.label} style={styles.step}>
-                <View style={styles.rail}>
-                  {index < analysisSteps.length - 1 ? <View style={[styles.line, done && styles.lineDone]} /> : null}
-                  <View style={[styles.stepCircle, done && styles.doneCircle, current && styles.currentCircle]}>
-                    {done ? <Check size={16} color={colors.brand900} strokeWidth={3.2} /> : <Icon size={16} color={current ? colors.lime : '#52685F'} />}
-                  </View>
-                </View>
-                <View style={styles.stepCopy}>
-                  <Text style={[styles.stepLabel, done && styles.doneLabel, current && styles.currentLabel, !done && !current && styles.futureLabel]}>{item.label}</Text>
-                  {item.detail ? <Text style={[styles.stepDetail, current && styles.currentDetail]}>{item.detail}</Text> : null}
-                </View>
-                {done ? <Check size={18} color={colors.lime} strokeWidth={2.6} /> : null}
-              </View>
-            );
-          })}
-        </View>
-        <Text style={styles.timer}>Cela prend généralement moins de 30 secondes.</Text>
-      </EntryScreen>
-    );
-  }
-
   return (
-    <EntryScreen style={styles.welcomeSafe}>
-      <View style={[styles.welcomeBrand, { marginTop: height > 850 ? 126 : 82 }]}><EntryBrand size={94} /></View>
-      <View style={styles.welcomeCopy}>
-        <Text style={styles.welcomeTitle}>On soulève{`\n`}<Text style={styles.lime}>chaque</Text> détail.</Text>
-        <Text style={styles.welcomeBody}>L’app qui analyse les annonces{`\n`}pour acheter en toute confiance.</Text>
-      </View>
-      <View style={styles.dots}><View style={styles.dotActive} /><View style={styles.dot} /><View style={styles.dot} /></View>
+    <EntryScreen style={[styles.safe, compact && styles.safeCompact]}>
+      <View style={[styles.brand, compact && styles.brandCompact]}><EntryBrand size={compact ? 48 : 58} /></View>
+
+      {page === 0 ? <AnalysisPreview compact={compact} /> : null}
+      {page === 1 ? <ValuePage compact={compact} title="Négocie avec un chiffre, pas au hasard." body="DealUp prépare une offre et une limite avant que tu contactes le vendeur."><PriceComparisonGraphic /></ValuePage> : null}
+      {page === 2 ? <ValuePage compact={compact} title="39 annonces avant de choisir." body="DealUp analyse chacune pour t’aider à conclure beaucoup plus vite."><ResearchSpeedGraphic /></ValuePage> : null}
+      {page === 3 ? <ValuePage compact={compact} title="Deux lectures. Une décision plus claire." body="La courbe grise reste limitée à l’annonce. DealUp croise le prix, les photos et les preuves."><DecisionClarityGraphic /></ValuePage> : null}
+      {page === 4 ? <NotificationPage compact={compact} /> : null}
+
       <View style={styles.footer}>
-        <EntryPrimaryButton label="Commencer" onPress={() => setScreen('demo')} />
-        <Pressable onPress={openLogin} style={styles.loginButton}><Text style={styles.loginText}>Déjà un compte ?  <Text style={styles.loginStrong}>Se connecter</Text></Text></Pressable>
+        <OnboardingDots active={page} />
+        {page < 4 ? <EntryPrimaryButton label="Continuer" onPress={() => setPage((value) => value + 1)} /> : <>
+          <EntryPrimaryButton label="M’avertir" loading={requesting} onPress={() => void enableNotifications()} />
+          <Pressable disabled={requesting} onPress={finish} style={styles.later}><Text style={styles.laterText}>Plus tard</Text></Pressable>
+        </>}
       </View>
     </EntryScreen>
   );
 }
 
+function AnalysisPreview({ compact }: { compact: boolean }) {
+  return (
+    <View style={styles.page}>
+      <View style={styles.copy}>
+        <Text style={[styles.title, compact && styles.titleCompact]}>On vérifie ce que{`\n`}l’annonce ne dit pas.</Text>
+        <Text style={styles.body}>Une lecture complète avant de payer.</Text>
+      </View>
+      <View style={[styles.analysisCard, compact && styles.analysisCardCompact]}>
+        <View style={[styles.photoShell, compact && styles.photoShellCompact]}>
+          <Image contentFit="cover" contentPosition="center" source={require('../../assets/devices/onboarding-listing.png')} style={StyleSheet.absoluteFill} />
+          <View style={styles.photoShade} />
+          <View style={styles.deviceCaption}><Text style={styles.deviceName}>iPhone 16 Pro</Text><Text style={styles.deviceMeta}>750 €</Text></View>
+        </View>
+        <View style={[styles.steps, compact && styles.stepsCompact]}>
+          {analysisSteps.map((item, index) => {
+            const done = index < 3;
+            const current = index === 3;
+            const Icon = item.icon;
+            return (
+              <View key={item.label} style={[styles.step, compact && styles.stepCompact]}>
+                <View style={styles.rail}>
+                  {index < analysisSteps.length - 1 ? <View style={[styles.line, done && styles.lineDone]} /> : null}
+                  <View style={[styles.stepCircle, done && styles.doneCircle, current && styles.currentCircle]}>
+                    {done ? <Check size={14} color={colors.brand900} strokeWidth={3.2} /> : <Icon size={14} color={colors.lime} />}
+                  </View>
+                </View>
+                <View style={styles.stepCopy}>
+                  <Text style={[styles.stepLabel, done && styles.doneLabel, current && styles.currentLabel]}>{item.label}</Text>
+                  {current ? <Text style={styles.currentDetail}>Préparation des recommandations</Text> : null}
+                </View>
+                {done ? <Check size={16} color={colors.lime} strokeWidth={2.7} /> : null}
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function ValuePage({ title, body, children, compact }: { title: string; body: string; children: React.ReactNode; compact: boolean }) {
+  return (
+    <View style={styles.page}>
+      <View style={styles.copy}>
+        <Text style={[styles.title, compact && styles.titleCompact]}>{title}</Text>
+        <Text style={styles.body}>{body}</Text>
+      </View>
+      <View style={[styles.graphic, compact && styles.graphicCompact]}>{children}</View>
+    </View>
+  );
+}
+
+function NotificationPage({ compact }: { compact: boolean }) {
+  return (
+    <View style={[styles.notificationPage, compact && styles.notificationPageCompact]}>
+      <View style={styles.bellHalo}><View style={styles.bellCircle}><Bell color={colors.brand900} fill={colors.lime} size={46} strokeWidth={2.2} /></View></View>
+      <Text style={[styles.title, compact && styles.titleCompact]}>Ton verdict est prêt,{`\n`}même si tu quittes l’app.</Text>
+      <Text style={[styles.body, styles.notificationBody]}>DealUp peut t’avertir dès qu’une analyse ou une réanalyse se termine.</Text>
+    </View>
+  );
+}
+
+function OnboardingDots({ active }: { active: number }) {
+  return (
+    <View style={styles.dots} accessibilityLabel={`Étape ${active + 1} sur 5`}>
+      {[0, 1, 2, 3, 4].map((index) => <View key={index} style={index === active ? styles.dotActive : styles.dot} />)}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  welcomeSafe: { paddingHorizontal: 30, paddingBottom: 18 },
-  welcomeBrand: { alignItems: 'center' },
-  welcomeCopy: { marginTop: 69, alignItems: 'center' },
-  welcomeTitle: { color: colors.white, fontSize: 40, lineHeight: 44, fontWeight: '700', letterSpacing: -1.2, textAlign: 'center' },
-  lime: { color: colors.lime },
-  welcomeBody: { color: '#AEBAB4', fontSize: 17, lineHeight: 24, textAlign: 'center', marginTop: 27 },
-  dots: { marginTop: 'auto', marginBottom: 61, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 11 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#60756C' },
-  dotActive: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .8, shadowRadius: 7 },
-  footer: { gap: 14 },
-  loginButton: { minHeight: 58, borderRadius: 29, borderWidth: 1, borderColor: 'rgba(129,176,155,.35)', backgroundColor: 'rgba(1,39,30,.48)', alignItems: 'center', justifyContent: 'center' },
-  loginText: { color: '#D1DBD5', fontSize: 14 },
-  loginStrong: { color: colors.white },
-  demoSafe: { paddingHorizontal: layout.gutter, paddingBottom: 22 },
-  demoBrand: { alignItems: 'center' },
-  demoTitle: { ...type.h1, color: colors.white, fontSize: 36, lineHeight: 40, textAlign: 'center', marginTop: 45 },
-  listingCard: { minHeight: 104, borderRadius: radii.md, borderWidth: 1, borderColor: 'rgba(112,169,144,.22)', backgroundColor: 'rgba(2,42,32,.68)', padding: 13, flexDirection: 'row', alignItems: 'center', gap: 17, marginTop: 38 },
-  listingCopy: { flex: 1 },
-  product: { color: colors.white, fontSize: 16, fontWeight: '700' },
-  meta: { color: '#9AABA3', fontSize: 14, marginTop: 6 },
-  stepsCard: { minHeight: 286, borderRadius: radii.md, borderWidth: 1, borderColor: 'rgba(112,169,144,.18)', backgroundColor: 'rgba(1,37,29,.62)', paddingHorizontal: 20, paddingVertical: 17, marginTop: 11 },
-  step: { minHeight: 62, flexDirection: 'row', alignItems: 'flex-start' },
-  rail: { width: 44, alignItems: 'center' },
-  line: { position: 'absolute', top: 30, bottom: -33, width: 2, backgroundColor: '#355B4B' },
-  lineDone: { backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .7, shadowRadius: 6 },
-  stepCircle: { width: 34, height: 34, borderRadius: 17, borderWidth: 2, borderColor: '#47675A', backgroundColor: '#08281F', alignItems: 'center', justifyContent: 'center' },
-  doneCircle: { borderColor: '#D7FF58', backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .9, shadowRadius: 11 },
-  currentCircle: { borderColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .9, shadowRadius: 10 },
-  stepCopy: { flex: 1, paddingTop: 4, paddingLeft: 7 },
-  stepLabel: { color: colors.white, fontSize: 15, fontWeight: '500' },
-  doneLabel: { color: '#F5FFF8', fontWeight: '600' },
-  currentLabel: { color: colors.white, fontWeight: '700' },
-  futureLabel: { color: '#71857B' },
-  stepDetail: { color: '#82978D', fontSize: 12, marginTop: 5 },
-  currentDetail: { color: '#AFC0B7' },
-  timer: { color: '#CBD5D0', fontSize: 12, textAlign: 'center', marginTop: 'auto', marginBottom: 43 },
+  safe: { paddingHorizontal: 22, paddingBottom: 16 },
+  safeCompact: { paddingHorizontal: 18, paddingBottom: 10 },
+  brand: { alignItems: 'center', marginTop: 7 },
+  brandCompact: { marginTop: -5 },
+  page: { flex: 1 },
+  copy: { alignItems: 'center', marginTop: 18 },
+  title: { color: colors.white, fontSize: 29, lineHeight: 33, fontWeight: '700', letterSpacing: -.8, textAlign: 'center' },
+  titleCompact: { fontSize: 25, lineHeight: 28 },
+  body: { color: '#A8B8B0', fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 8, paddingHorizontal: 8 },
+  analysisCard: { borderRadius: 24, overflow: 'hidden', marginTop: 18, padding: 9, backgroundColor: 'rgba(0,30,23,.82)', borderWidth: 1, borderColor: 'rgba(136,189,165,.22)' },
+  analysisCardCompact: { marginTop: 10, padding: 7 },
+  photoShell: { height: 180, borderRadius: 18, overflow: 'hidden', justifyContent: 'flex-end', backgroundColor: '#073B2D' },
+  photoShellCompact: { height: 119 },
+  photoShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,20,14,.10)' },
+  deviceCaption: { paddingHorizontal: 13, paddingVertical: 9, backgroundColor: 'rgba(0,22,16,.76)' },
+  deviceName: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  deviceMeta: { color: '#A5B7AE', fontSize: 10, marginTop: 2 },
+  steps: { paddingHorizontal: 8, paddingTop: 13, paddingBottom: 0 },
+  stepsCompact: { paddingTop: 8 },
+  step: { minHeight: 48, flexDirection: 'row', alignItems: 'flex-start' },
+  stepCompact: { minHeight: 39 },
+  rail: { width: 35, alignItems: 'center' },
+  line: { position: 'absolute', top: 27, bottom: -22, width: 2, backgroundColor: '#355B4B' },
+  lineDone: { backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .75, shadowRadius: 6 },
+  stepCircle: { width: 29, height: 29, borderRadius: 15, borderWidth: 2, borderColor: '#47675A', backgroundColor: '#08281F', alignItems: 'center', justifyContent: 'center' },
+  doneCircle: { borderColor: '#D7FF58', backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .85, shadowRadius: 9 },
+  currentCircle: { borderColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .82, shadowRadius: 9 },
+  stepCopy: { flex: 1, minWidth: 0, paddingLeft: 7, paddingTop: 4 },
+  stepLabel: { color: '#71857B', fontSize: 13, fontWeight: '500' },
+  doneLabel: { color: '#F4FFF7', fontWeight: '600' },
+  currentLabel: { color: colors.lime, fontWeight: '700' },
+  currentDetail: { color: '#A8BCB2', fontSize: 9, marginTop: 2 },
+  graphic: { flex: 1, justifyContent: 'center', marginTop: 12 },
+  graphicCompact: { transform: [{ scale: .88 }], marginHorizontal: -16, marginTop: -5 },
+  notificationPage: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 30 },
+  notificationPageCompact: { paddingBottom: 4 },
+  bellHalo: { width: 142, height: 142, borderRadius: 71, backgroundColor: 'rgba(196,245,42,.08)', alignItems: 'center', justifyContent: 'center', marginBottom: 34, shadowColor: colors.lime, shadowOpacity: .28, shadowRadius: 30 },
+  bellCircle: { width: 94, height: 94, borderRadius: 47, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
+  notificationBody: { maxWidth: 330, marginTop: 14 },
+  footer: { gap: 11 },
+  dots: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#60756C' },
+  dotActive: { width: 18, height: 7, borderRadius: 4, backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .8, shadowRadius: 7 },
+  later: { minHeight: 42, alignItems: 'center', justifyContent: 'center' },
+  laterText: { color: '#B1BFB8', fontSize: 13, fontWeight: '600' },
 });

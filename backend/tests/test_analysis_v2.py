@@ -48,6 +48,11 @@ class SuccessfulStorage:
         self.deleted.append(object_key)
 
 
+class PresigningStorage:
+    def presign_read(self, object_key: str) -> str:
+        return f"https://media.example.test/{object_key}"
+
+
 def activate_subscription() -> None:
     with session_factory()() as session:
         user = session.query(User).filter_by(clerk_user_id="user_local_dealup").one()
@@ -86,7 +91,7 @@ def create_initial(client) -> str:
     return created.json()["analysis_id"]
 
 
-def test_reanalysis_pins_parent_versions_while_refresh_uses_current(client) -> None:
+def test_reanalysis_and_refresh_capture_current_engine_metadata(client) -> None:
     from app.main import app
 
     app.dependency_overrides[piloterr_dependency] = lambda: FakePiloterr()
@@ -100,11 +105,7 @@ def test_reanalysis_pins_parent_versions_while_refresh_uses_current(client) -> N
             parent.status = AnalysisStatus.COMPLETED
             parent.result = {"schema_version": "2.0", "internal_test": True}
             parent.model_id = "founder-manual-model"
-            parent.prompt_version = "1.9"
-            parent.taxonomy_version = "0.9"
-            parent.scoring_version = "0.9"
-            parent.checklist_version = "0.9"
-            parent.device_catalog_version = "0.9"
+            parent.engine_revision = "legacy-engine"
             session.commit()
 
         reanalysis = client.post(
@@ -124,14 +125,11 @@ def test_reanalysis_pins_parent_versions_while_refresh_uses_current(client) -> N
             refreshed = session.get(Analysis, refresh.json()["analysis_id"])
             assert child is not None and refreshed is not None
             assert child.kind == AnalysisKind.REANALYSIS
-            assert child.prompt_version == "1.9"
-            assert child.taxonomy_version == "0.9"
+            assert child.engine_revision == "legacy-engine"
             assert child.model_id == "founder-manual-model"
             assert child.root_analysis_id == parent_id
-            active = get_analysis_contract().versions()
             assert refreshed.kind == AnalysisKind.REFRESH
-            assert refreshed.prompt_version == active["prompt_version"]
-            assert refreshed.taxonomy_version == active["taxonomy_version"]
+            assert refreshed.engine_revision == get_analysis_contract().engine_revision
             assert refreshed.root_analysis_id == parent_id
     finally:
         app.dependency_overrides.clear()
@@ -248,11 +246,9 @@ def test_analysis_resources_are_filtered_by_internal_user(client) -> None:
             kind=AnalysisKind.INITIAL,
             idempotency_key="foreign-analysis-key",
             request_fingerprint="a" * 64,
-            source_url="https://www.leboncoin.fr/ad/1",
             purchase_mode=PurchaseMode.FACE_TO_FACE,
-            seller_media=[],
-            prompt_version="2.0",
-            schema_version="2.0",
+            input_snapshot={"source_url": "https://www.leboncoin.fr/ad/1"},
+            seller_context={"media": []},
         )
         session.add(foreign)
         session.commit()
@@ -263,3 +259,142 @@ def test_analysis_resources_are_filtered_by_internal_user(client) -> None:
 
     assert response.status_code == 404
     assert deletion.status_code == 404
+
+
+def test_analysis_media_endpoint_returns_owned_presigned_media(client) -> None:
+    from app.main import app
+
+    app.dependency_overrides[storage_dependency] = lambda: PresigningStorage()
+    try:
+        assert client.get("/v1/me").status_code == 200
+        with session_factory()() as session:
+            user = (
+                session.query(User).filter_by(clerk_user_id="user_local_dealup").one()
+            )
+            analysis = Analysis(
+                user_id=user.id,
+                kind=AnalysisKind.INITIAL,
+                status=AnalysisStatus.COMPLETED,
+                idempotency_key="media-endpoint-analysis",
+                request_fingerprint="m" * 64,
+                purchase_mode=PurchaseMode.FACE_TO_FACE,
+                input_snapshot={"source_url": "https://www.leboncoin.fr/ad/42"},
+                seller_context={"media": []},
+            )
+            session.add(analysis)
+            session.flush()
+            analysis.root_analysis_id = analysis.id
+            object_key = f"private/{user.id}/{analysis.id}/listing-0.jpg"
+            media = Media(
+                user_id=user.id,
+                analysis_id=analysis.id,
+                object_key=object_key,
+                content_type="image/jpeg",
+                size_bytes=128,
+                role="listing_photo",
+                ordinal=0,
+                status="ready",
+            )
+            session.add(media)
+            session.commit()
+            analysis_id = analysis.id
+            media_id = media.id
+
+        response = client.get(f"/v1/analyses/{analysis_id}/media")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == {
+            "items": [
+                {
+                    "id": media_id,
+                    "role": "listing_photo",
+                    "ordinal": 0,
+                    "content_type": "image/jpeg",
+                    "url": f"https://media.example.test/{object_key}",
+                }
+            ]
+        }
+        assert response.json()["items"][0]["url"].startswith(
+            "https://media.example.test/private/"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_analysis_list_returns_a_presigned_thumbnail_url(client) -> None:
+    from app.main import app
+
+    app.dependency_overrides[storage_dependency] = lambda: PresigningStorage()
+    try:
+        assert client.get("/v1/me").status_code == 200
+        with session_factory()() as session:
+            user = (
+                session.query(User).filter_by(clerk_user_id="user_local_dealup").one()
+            )
+            analysis = Analysis(
+                user_id=user.id,
+                kind=AnalysisKind.INITIAL,
+                status=AnalysisStatus.COMPLETED,
+                idempotency_key="analysis-list-thumbnail",
+                request_fingerprint="t" * 64,
+                purchase_mode=PurchaseMode.FACE_TO_FACE,
+                input_snapshot={"source_url": "https://www.leboncoin.fr/ad/42"},
+                seller_context={"media": []},
+            )
+            session.add(analysis)
+            session.flush()
+            analysis.root_analysis_id = analysis.id
+            object_key = f"private/{user.id}/{analysis.id}/listing-0.jpg"
+            media = Media(
+                user_id=user.id,
+                analysis_id=analysis.id,
+                object_key=object_key,
+                content_type="image/jpeg",
+                size_bytes=128,
+                role="listing_photo",
+                ordinal=0,
+                status="ready",
+            )
+            session.add(media)
+            session.flush()
+            report = adapt_legacy_result(
+                {
+                    "schema_version": "1.0",
+                    "verdict": {
+                        "type": "VERIFY_FIRST",
+                        "deal_score": 62,
+                        "confidence": "MEDIUM",
+                        "headline": "Quelques preuves restent à demander",
+                        "explanation": "L’annonce mérite une vérification.",
+                    },
+                    "primary_action": {
+                        "type": "REQUEST_PROOFS",
+                        "label": "Demander les preuves",
+                        "reason": "Les preuves sont incomplètes.",
+                    },
+                    "pricing": {},
+                    "risks": {"level": "MEDIUM", "items": []},
+                    "messages": {},
+                    "checklist": {},
+                    "available_actions": ["REQUEST_PROOFS"],
+                },
+                listing_payload=FakePiloterr().fetch_ad(
+                    "https://www.leboncoin.fr/ad/42"
+                ),
+                normalized_listing=None,
+                device_profile=None,
+            )
+            assert report is not None
+            report["listing"]["thumbnail_media_id"] = media.id
+            analysis.result = report
+            session.commit()
+            media_id = media.id
+
+        response = client.get("/v1/analyses?limit=50")
+
+        assert response.status_code == 200, response.text
+        listing = response.json()["items"][0]["listing"]
+        assert listing["thumbnail_media_id"] == media_id
+        assert listing["thumbnail_url"] == f"https://media.example.test/{object_key}"
+    finally:
+        app.dependency_overrides.clear()

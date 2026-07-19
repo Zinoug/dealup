@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Bike, PackageCheck, Store, Truck, UserRoundCheck, UserRoundX } from 'lucide-react-native';
+import { ArrowRight, Bike, PackageCheck, Store, Truck, UserRoundCheck, UserRoundX } from 'lucide-react-native';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -11,21 +11,29 @@ import { useAppStore } from '@/store/app-store';
 import { colors, layout, spacing, type } from '@/theme/tokens';
 
 export default function AnalysisSetupScreen() {
-  const { purchaseMode, setPurchaseMode, alreadyContacted, setSellerContext, identification } = useAppStore();
+  const { purchaseMode, setPurchaseMode, alreadyContacted, setSellerContext, identification, startAnalysis, isBusy, usage } = useAppStore();
   const [step, setStep] = useState<1 | 2>(1);
   const deviceName = identification?.compatibility?.device?.category === 'MACBOOK' ? 'ce MacBook' : 'cet iPhone';
 
-  const continueFlow = () => {
+  const continueFlow = async () => {
     if (step === 1) return setStep(2);
-    if (alreadyContacted) router.push('/seller-context');
-    else router.push('/analysis-confirm');
+    if (alreadyContacted) {
+      router.push('/seller-context');
+      return;
+    }
+    if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
+      router.replace('/quota');
+      return;
+    }
+    setSellerContext(false);
+    const id = await startAnalysis({ alreadyContacted: false });
+    if (id) router.replace({ pathname: '/analysis-progress', params: { id } });
   };
 
   return (
     <Screen contentStyle={styles.screen}>
       <ScreenHeader back onBack={step === 2 ? () => setStep(1) : undefined} rightLabel={`${step}/2`} compact />
       <View style={styles.content}>
-        <Text style={styles.eyebrow}>PERSONNALISER L’ANALYSE</Text>
         <Text style={styles.title}>{step === 1 ? `Comment comptes-tu acheter ${deviceName} ?` : 'As-tu déjà échangé avec le vendeur ?'}</Text>
         <Text style={styles.subtitle}>{step === 1 ? 'Les contrôles et conseils changent selon le mode d’achat.' : 'Sa réponse peut confirmer ou changer plusieurs signaux.'}</Text>
         <View style={styles.options} accessibilityRole="radiogroup">
@@ -43,7 +51,7 @@ export default function AnalysisSetupScreen() {
           )}
         </View>
       </View>
-      <View style={styles.footer}><BrandButton label={step === 1 ? 'Continuer' : alreadyContacted ? 'Ajouter sa réponse' : 'Voir le récapitulatif'} icon={step === 1 ? PackageCheck : UserRoundCheck} disabled={step === 1 && !purchaseMode} onPress={continueFlow} /></View>
+      <View style={styles.footer}><BrandButton label={step === 1 ? 'Continuer' : alreadyContacted ? 'Ajouter sa réponse' : 'Lancer l’analyse'} icon={step === 1 ? PackageCheck : alreadyContacted ? UserRoundCheck : ArrowRight} loading={isBusy} disabled={step === 1 && !purchaseMode} onPress={() => void continueFlow()} /></View>
     </Screen>
   );
 }
@@ -51,8 +59,7 @@ export default function AnalysisSetupScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { flex: 1, paddingHorizontal: layout.gutter },
-  eyebrow: { ...type.caption, color: colors.brand700, letterSpacing: 1 },
-  title: { ...type.h1, color: colors.ink, marginTop: spacing.xs },
+  title: { ...type.h1, color: colors.ink },
   subtitle: { ...type.body, color: colors.inkMuted, marginTop: spacing.sm },
   options: { gap: spacing.sm, marginTop: spacing.xl },
   footer: { padding: layout.gutter },

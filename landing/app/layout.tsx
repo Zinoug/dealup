@@ -26,8 +26,12 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   icons: {
-    icon: [{ url: "/dealup-app-icon.png", type: "image/png" }],
-    apple: [{ url: "/dealup-app-icon.png" }],
+    icon: [
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
@@ -71,7 +75,7 @@ const organizationSchema = {
   "@type": "Organization",
   name: SITE_NAME,
   url: SITE_URL,
-  logo: `${SITE_URL}/dealup-app-icon.png`,
+  logo: `${SITE_URL}/web-app-manifest-512x512.png`,
 };
 
 const websiteSchema = {
@@ -104,4 +108,3 @@ export default function RootLayout({
     </html>
   );
 }
-

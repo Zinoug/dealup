@@ -6,7 +6,14 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.security import AuthenticatedIdentity, get_identity
 from app.db.session import get_db
-from app.integrations import AnalysisInvoker, Analytics, MediaStorage, PiloterrClient
+from app.integrations import (
+    AnalysisInvoker,
+    Analytics,
+    ClerkClient,
+    MediaStorage,
+    PiloterrClient,
+    RevenueCatClient,
+)
 from app.models import User
 from app.services.users import UserService
 
@@ -15,7 +22,9 @@ Identity = Annotated[AuthenticatedIdentity, Depends(get_identity)]
 
 
 def current_user(identity: Identity, session: DbSession) -> User:
-    return UserService(session).get_or_create(identity.clerk_user_id)
+    service = UserService(session)
+    user = service.get_or_create(identity.clerk_user_id)
+    return service.hydrate_profile(user, ClerkClient(get_settings()))
 
 
 CurrentUser = Annotated[User, Depends(current_user)]
@@ -47,3 +56,9 @@ def storage_dependency(
     settings: Annotated[Settings, Depends(settings_dependency)],
 ) -> MediaStorage:
     return MediaStorage(settings)
+
+
+def revenuecat_dependency(
+    settings: Annotated[Settings, Depends(settings_dependency)],
+) -> RevenueCatClient:
+    return RevenueCatClient(settings)

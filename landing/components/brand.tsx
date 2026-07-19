@@ -13,7 +13,7 @@ export function Brand({ compact = false }: BrandProps) {
         className="brand__icon"
         height={compact ? 38 : 44}
         priority
-        src="/dealup-app-icon.png"
+        src="/dealup-app-icon-256.webp"
         width={compact ? 38 : 44}
       />
       <span className="brand__name">
@@ -22,4 +22,3 @@ export function Brand({ compact = false }: BrandProps) {
     </Link>
   );
 }
-

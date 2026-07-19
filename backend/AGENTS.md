@@ -23,17 +23,21 @@ Read `../AGENTS.md`, `../docs/product/product.md`, and `README.md` before editin
 - Heavy Gemini analysis never runs in FastAPI.
 - Piloterr identification runs in FastAPI because the teaser precedes the paywall.
 - Device compatibility is decided during identification. Only iPhone 11+/SE 2/3 and MacBook Air/Pro M1+ can reach paywall or quota consumption.
-- Public device rules, versions, and labels come from `../contracts/analysis/`; do not duplicate them in routes.
+- Public device rules and labels live in `app/domain/contracts.py`; routes never duplicate them.
 - The identification is private to its user and is not a shared cache.
 - New and refreshed analyses reserve quota before Lambda dispatch.
 - Reanalysis requires ownership plus a completed parent and consumes no quota.
 - Every quota debit/reversal and top-up is an immutable `usage_events` ledger entry.
 - All authenticated queries filter by internal `users.id`, not only Clerk ID.
+- Clerk remains the identity authority; email, display name and authentication
+  provider are synchronized into `users` through the Clerk API after authentication.
+- PostHog always uses internal `users.id`. Never mix it with Clerk IDs.
 - RevenueCat `app_user_id` is the Clerk user ID in V1.
 - Webhook processing is defensive against unknown fields and duplicate delivery.
 - API errors use stable uppercase business codes; do not expose provider exceptions.
-- Persist the internal Gemini candidate separately from the public post-processed report.
-- Reanalysis inherits every engine version from its parent; refresh captures current versions.
+- Persist the compact internal Gemini candidate separately from the public post-processed report.
+- Every new job captures one `engine_revision`; detailed runtime metadata lives
+  in `run_metadata`. Git, not filename suffixes, versions rule implementations.
 - Old schema `1.0` reports remain readable through a response adapter and are not rewritten in place.
 - Analysis/account deletion includes all chain media and records a retryable deletion job before external S3 calls.
 

@@ -4,7 +4,7 @@
     "slug": "dealup",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/dealup-app-icon.png",
+    "icon": "./assets/images/dealup-app-icon-ios.png",
     "scheme": "dealup",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#001B14",
@@ -54,7 +54,15 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication",
+      [
+        "expo-notifications",
+        {
+          "color": "#C4F52A"
+        }
+      ],
+      "@sentry/react-native/expo"
     ],
     "experiments": {
       "typedRoutes": true

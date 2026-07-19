@@ -1,90 +1,65 @@
 # DealUp Mobile
 
-Application iOS Expo, React Native et TypeScript. L’interface V1 couvre le parcours d’un acheteur d’iPhone 11+/SE 2/3 ou de MacBook Air/Pro M1+, de l’onboarding au rapport et à la réanalyse vendeur.
+Application iOS Expo, React Native et TypeScript. Le runtime normal est entièrement connecté à FastAPI, Clerk et RevenueCat : il n’existe plus de faux compte, faux achat, faux quota ou faux historique.
 
-## Démarrage de l’interface
+## Démarrage
+
+Cette app contient du code natif (RevenueCat, Apple Sign-In, notifications, Sentry et extension de partage). Expo Go ne suffit pas.
 
 ```bash
 cp .env.example .env
 npm install --include=dev
-npm start
+npx expo prebuild --platform ios
+npx expo run:ios
 ```
 
-`EXPO_PUBLIC_USE_MOCKS=true` est la valeur par défaut. Dans ce mode :
-
-- aucune requête n’est envoyée à FastAPI ;
-- la connexion Clerk est simulée ;
-- les achats RevenueCat/App Store sont simulés ;
-- une annonce Leboncoin et un rapport réalistes sont disponibles ;
-- les choix, le quota et la checklist sont persistés localement.
-
-Depuis l’accueil, toucher « Utiliser l’annonce de démonstration » permet de tester tout le tunnel sans presse-papiers.
-
-## Parcours implémentés
-
-```mermaid
-flowchart TD
-    A["Onboarding"] --> B["Connexion Apple, Google ou email"]
-    B --> C["Accueil et partage Leboncoin"]
-    C --> C2{"Appareil compatible ?"}
-    C2 -->|"Non"| C3["Appareils compatibles"]
-    C2 -->|"Oui"| D["Teaser personnalisé"]
-    D --> E["Hard paywall"]
-    E --> F["Mode d’achat"]
-    F --> G["Contexte vendeur"]
-    G --> H["Analyse progressive"]
-    H --> I["Rapport unique scrollable"]
-    I --> J["Messages et offre"]
-    I --> K["Checklist"]
-    I --> L["Réanalyse gratuite"]
-```
-
-Écrans secondaires inclus : historique, profil, restauration d’achat, quota épuisé, passage au Monthly et top-up de 10 analyses.
-
-Depuis le profil en mode mock :
-
-- « Appareils compatibles » ouvre le catalogue avec fallback local versionné ;
-- « Laboratoire des rapports » ouvre les huit fixtures `4 verdicts × 2 catégories` ;
-- « Prévisualiser l’analyse » montre l’animation sans fournisseur payant.
-
-## Vérifications locales
+Après le premier build natif, démarrer Metro séparément lors des sessions suivantes :
 
 ```bash
-npm run lint
+npx expo start --dev-client
+```
+
+Si l’app affiche `No script URL provided`, Metro n’est pas lancé ou le build précédent a échoué. Vérifier aussi l’espace disque disponible avant de reconstruire.
+
+## Intégrations actives
+
+- Clerk : Apple, Google et code reçu par e-mail ;
+- FastAPI : token Clerk envoyé dans `Authorization: Bearer …` ;
+- RevenueCat : achats, restauration et prix App Store réels ;
+- PostHog : UUID interne `/v1/me`, e-mail et fournisseur comme propriétés de personne, événements sans contenu privé ;
+- Sentry : erreurs sans PII explicite ;
+- historique, quota, rapports et photos : chargés depuis l’API au lancement.
+- notifications Expo Push : demandées après une première inscription, réactivables dans « Ton espace », puis envoyées par le worker à la fin d’une analyse.
+
+Les outils de développement sont contrôlés par `EXPO_PUBLIC_DEV_TOOLS`. Ils donnent accès aux huit fixtures visuelles et ajoutent sur un vrai rapport le bouton « Revoir l’animation d’analyse ». Ce replay relit les photos privées déjà archivées et le rapport localement ; il ne crée aucun job, n’appelle ni Piloterr ni Gemini et ne consomme aucun quota. En preview et production, ces outils sont désactivés.
+
+## Variables
+
+Voir `.env.example` et le guide complet [`../docs/operations/configuration.md`](../docs/operations/configuration.md). Les variables `EXPO_PUBLIC_*` sont intégrées au bundle et ne doivent jamais contenir une clé secrète serveur.
+
+## EAS
+
+`eas.json` contient trois profils sans déploiement automatique :
+
+- `development` : dev client interne avec outils développeur ;
+- `preview` : build interne connecté au staging, sans fixtures ;
+- `production` : build App Store, sans fixtures.
+
+Avant le premier build cloud, exécuter `eas init`, configurer les variables EAS puis :
+
+```bash
+eas build --platform ios --profile development
+eas build --platform ios --profile production
+```
+
+## Vérifications
+
+```bash
+NODE_ENV=development npm run lint
 npm run typecheck
 npx expo export --platform ios
 ```
 
-L’extension de partage iOS est générée par le plugin officiel `expo-sharing`. Elle accepte un texte ou une URL web et redirige vers `handle-share`. Elle nécessite un build natif :
+L’extension de partage utilise le bundle `com.joindealup.app.ShareExtension` et l’App Group `group.com.joindealup.app`. Le bundle principal est `com.joindealup.app`.
 
-```bash
-npx expo run:ios
-```
-
-Le bundle principal prévu est `com.joindealup.app`, l’extension `com.joindealup.app.ShareExtension` et l’App Group `group.com.joindealup.app`. Ces identifiants devront être confirmés avant App Store Connect.
-
-## Organisation
-
-```text
-src/
-  app/          routes Expo Router
-  components/   composants UI réutilisables
-  data/         données de démonstration
-  services/     API et télémétrie, sans état UI
-  store/        état de parcours et persistance locale
-  theme/        couleurs, typographie, espacements et élévations
-  types/        contrats TypeScript partagés côté mobile
-  utils/        fonctions pures
-```
-
-Le contrat HTTP V2 est isolé dans `src/services/dealup-api.ts`. Passer `EXPO_PUBLIC_USE_MOCKS=false` active ce chemin, mais l’authentification Bearer Clerk et les achats réels restent à brancher avant un test de bout en bout.
-
-## Intégrations restant à brancher
-
-- Clerk : remplacer `signInDemo` par les flux Apple, Google et code email ;
-- RevenueCat : remplacer les achats simulés par les produits `dealup_premium_weekly`, `dealup_premium_monthly` et `dealup_analysis_topup_10` ;
-- PostHog : envoyer les événements de `src/services/telemetry.ts` ;
-- Sentry : initialiser le SDK avec `EXPO_PUBLIC_SENTRY_DSN` ;
-- FastAPI : fournir le token Clerk et valider les mappers JSON en environnement de développement.
-
-Les emplacements et spécifications des visuels à fournir sont décrits dans [assets/README.md](assets/README.md).
+Les spécifications des assets sont dans [`assets/README.md`](assets/README.md).

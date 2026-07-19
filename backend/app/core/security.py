@@ -1,12 +1,18 @@
 from dataclasses import dataclass
 from functools import lru_cache
+import logging
+import ssl
 
+import certifi
 import jwt
 from fastapi import Header
 from jwt import PyJWKClient
 
 from app.core.config import Settings, get_settings
 from app.core.errors import DealUpError
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -17,7 +23,8 @@ class AuthenticatedIdentity:
 
 @lru_cache(maxsize=4)
 def _jwks_client(url: str) -> PyJWKClient:
-    return PyJWKClient(url, cache_keys=True)
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    return PyJWKClient(url, cache_keys=True, ssl_context=ssl_context)
 
 
 def verify_clerk_token(token: str, settings: Settings) -> AuthenticatedIdentity:
@@ -31,7 +38,10 @@ def verify_clerk_token(token: str, settings: Settings) -> AuthenticatedIdentity:
         signing_key = _jwks_client(settings.clerk_jwks_url).get_signing_key_from_jwt(
             token
         )
-        decode_options: dict[str, object] = {"algorithms": ["RS256"]}
+        decode_options: dict[str, object] = {
+            "algorithms": ["RS256"],
+            "leeway": 5,
+        }
         if settings.clerk_issuer:
             decode_options["issuer"] = settings.clerk_issuer
         jwt_options: dict[str, object] = {"require": ["exp", "nbf", "sub"]}
@@ -42,6 +52,10 @@ def verify_clerk_token(token: str, settings: Settings) -> AuthenticatedIdentity:
         decode_options["options"] = jwt_options
         claims = jwt.decode(token, signing_key.key, **decode_options)
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
+        if settings.app_env == "local":
+            logger.warning(
+                "Clerk token rejected (%s): %s", type(exc).__name__, exc
+            )
         raise DealUpError(
             "AUTHENTICATION_REQUIRED", "Session invalide ou expirée.", 401
         ) from exc

@@ -9,8 +9,7 @@ Read, in order:
 1. this file;
 2. the closest folder-level `AGENTS.md`;
 3. `docs/product/product.md`;
-4. `contracts/analysis/README.md` when analysis behavior changes;
-5. the relevant project README.
+4. the relevant project README.
 
 Keep the monorepo simple: `mobile/`, `landing/`, `backend/`, `workers/`, and `docs/`. Do not add `apps/`, `packages/`, or `infra/` without an explicit architectural decision.
 
@@ -41,7 +40,7 @@ Keep the monorepo simple: `mobile/`, `landing/`, `backend/`, `workers/`, and `do
 6. Lambda reserves the job idempotently.
 7. Lambda uses the private Piloterr payload, or refetches it for an explicit refresh.
 8. Lambda archives analyzed images privately, then calls Gemini exactly once.
-9. Lambda validates `GeminiCandidateV2`, computes the deterministic public report, and persists both.
+9. Lambda parses the compact Gemini JSON, computes the deterministic public report, and persists both.
 10. Provider failure reverses the quota debit exactly once.
 
 Analysis states are exactly:
@@ -56,7 +55,7 @@ Analysis states are exactly:
 The backend and worker use explicit layers:
 
 - `api` or `handler`: transport validation and response/status mapping only;
-- `schemas`: versioned input and output contracts;
+- `schemas`: public input and output contracts;
 - `services`: use cases, business rules, and transaction boundaries;
 - `repositories`: database reads and writes only;
 - `models`: persistence mappings only;
@@ -92,14 +91,14 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 ## Gemini Rules
 
-- Model ID, thinking level, temperature, prompt version, and schema version are configuration or versioned constants.
+- Model ID and thinking level are configuration. Engine metadata is stored for audit, while Git versions the implementation.
 - The production model remains founder-selected through manual testing; do not hardcode product claims about model superiority.
-- Use the Gemini Interactions API with structured output and Google Search.
+- Use the Gemini Interactions API with Google Search. Ask for JSON only in the system instruction; do not send a `response_format.schema`.
 - Keep `store=false` by default for private data.
 - Full analysis is one coherent model call. Do not split price, score, risk, and verdict into independent calls that can disagree.
 - Reanalysis sends the prior structured result plus only the new private context needed.
-- `contracts/analysis/` is the data-only source for manifest, catalog, taxonomies, scoring, checklists, and prompts.
-- Validate the candidate schema, then compute score, verdict, price savings, action, checklist labels, and template deterministically.
+- Backend and worker own the small rules they need locally. Do not add a shared runtime `contracts/` loader or version numbers in filenames.
+- Parse the compact candidate defensively, then compute score, verdict, price savings, action, checklist labels, and template deterministically.
 - Gemini may write bounded personalized commentary but never invent business codes, UI ordering, or assets.
 - Send only the common taxonomy and the detected category taxonomy.
 - Unknown risk codes become `OTHER`, are capped at `MEDIUM`, and are measured.
@@ -110,7 +109,9 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 - Provider SDK usage belongs only in `integrations/`.
 - Never log secrets, full listing payloads, full URLs, seller messages, or photos.
-- PostHog receives IDs and coarse product metadata only.
+- PostHog uses internal `users.id` as the single distinct ID across mobile, API,
+  and worker. Email and authentication provider are allowed only as person
+  properties; events still receive coarse product metadata only.
 - Sentry may receive stack traces, but explicit context must be sanitized.
 - RevenueCat webhooks require authorization and optional HMAC verification, and must be idempotent by event ID.
 - Use private object keys and presigned S3 operations for seller media.
@@ -119,7 +120,7 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 ## Mobile and Landing
 
-Mobile flow: onboarding → auth → URL/share → compatibility → private Piloterr teaser → hard paywall when needed → purchase mode → seller context → analysis → report → reanalysis/history/profile.
+Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → compatibility → private Piloterr teaser → hard paywall when needed → purchase mode → seller context → analysis → report → reanalysis/history/profile.
 
 The report is one scrollable screen with four deterministic section orders (`BUY`, `NEGOTIATE`, `VERIFY_FIRST`, `PASS`) and category-specific checklist content.
 

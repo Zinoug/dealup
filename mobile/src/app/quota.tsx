@@ -7,9 +7,10 @@ import { Screen } from '@/components/screen';
 import { ScreenHeader } from '@/components/screen-header';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
+import { formatMonthlyPricePerWeek } from '@/utils/pricing';
 
 export default function QuotaScreen() {
-  const { usage, purchaseTopUp, isBusy } = useAppStore();
+  const { usage, purchaseTopUp, isBusy, billingProducts, choosePlan } = useAppStore();
   const isWeekly = usage.plan === 'weekly';
   return (
     <Screen scroll contentStyle={styles.content}>
@@ -19,10 +20,9 @@ export default function QuotaScreen() {
       <Text style={styles.title}>Continue sans attendre le renouvellement.</Text>
       <Text style={styles.subtitle}>Tes rapports et réanalyses restent accessibles. Choisis seulement si tu veux analyser de nouvelles annonces maintenant.</Text>
       <View style={styles.options}>
-        {isWeekly ? <View style={[styles.option, styles.featured]}><Text style={styles.badge}>PLUS DE MARGE</Text><Text style={styles.optionTitle}>Passer à Monthly</Text><Text style={styles.price}>12,99 € / mois</Text><Text style={styles.optionBody}>60 nouvelles annonces chaque mois, avec le même accès complet.</Text><View style={styles.line}><Check size={16} color={colors.brand800} /><Text style={styles.lineText}>45 annonces de plus que Weekly</Text></View><BrandButton label="Choisir Monthly" icon={ArrowUpRight} variant="secondary" onPress={() => router.replace('/paywall')} /></View> : null}
-        <View style={styles.option}><Text style={styles.optionTitle}>Ajouter 10 analyses</Text><Text style={styles.price}>4,99 € une fois</Text><Text style={styles.optionBody}>Pack réservé aux abonnés actifs. Il n’expire pas et sera utilisé après ton quota inclus.</Text><View style={styles.line}><Check size={16} color={colors.brand800} /><Text style={styles.lineText}>Aucun nouvel abonnement</Text></View><BrandButton label="Ajouter 10 analyses" icon={Plus} loading={isBusy} onPress={() => void purchaseTopUp().then(() => router.replace('/(tabs)'))} /></View>
+        {isWeekly ? <View style={[styles.option, styles.featured]}><Text style={styles.badge}>PLUS DE MARGE</Text><Text style={styles.optionTitle}>Passer au Mensuel</Text><Text style={styles.price}>{billingProducts.monthly ? formatMonthlyPricePerWeek(Math.round(billingProducts.monthly.price * 100)) : '—'} / semaine</Text><Text style={styles.billing}>{billingProducts.monthly ? `Facturé ${billingProducts.monthly.priceString} par mois` : 'Prix App Store indisponible'}</Text><Text style={styles.optionBody}>60 nouvelles annonces chaque mois, avec le même accès complet.</Text><View style={styles.line}><Check size={16} color={colors.brand800} /><Text style={styles.lineText}>45 annonces de plus que l’Hebdomadaire</Text></View><BrandButton label="Voir le Mensuel" icon={ArrowUpRight} variant="secondary" onPress={() => { choosePlan('monthly'); router.replace('/paywall'); }} /></View> : null}
+        <View style={styles.option}><Text style={styles.optionTitle}>Ajouter 10 analyses</Text><Text style={styles.price}>{billingProducts.topUp?.priceString ?? '—'} une fois</Text><Text style={styles.optionBody}>Disponible tant que ta formule est active. Le pack n’expire pas et sera utilisé après ton quota inclus.</Text><View style={styles.line}><Check size={16} color={colors.brand800} /><Text style={styles.lineText}>Sans changer de formule</Text></View><BrandButton label="Ajouter 10 analyses" icon={Plus} loading={isBusy} onPress={() => void purchaseTopUp().then((purchased) => { if (purchased) router.replace('/(tabs)'); })} /></View>
       </View>
-      <Text style={styles.note}>Mode interface : les achats restent simulés jusqu’au branchement RevenueCat.</Text>
     </Screen>
   );
 }
@@ -39,6 +39,7 @@ const styles = StyleSheet.create({
   badge: { ...type.caption, color: colors.brand700, letterSpacing: 0.9 },
   optionTitle: { ...type.h2, color: colors.ink },
   price: { ...type.h3, color: colors.brand700 },
+  billing: { ...type.caption, color: colors.inkMuted, marginTop: -spacing.xs },
   optionBody: { ...type.small, color: colors.inkMuted },
   line: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
   lineText: { ...type.caption, color: colors.inkMuted },

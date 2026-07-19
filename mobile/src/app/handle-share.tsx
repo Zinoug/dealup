@@ -12,36 +12,38 @@ import { findUrl, isLeboncoinUrl } from '@/utils/format';
 
 export default function HandleShareScreen() {
   const { sharedPayloads, isResolving, error, clearSharedPayloads } = useIncomingShare();
-  const { isReady, isSignedIn, setPendingUrl, identifyListing, isBusy } = useAppStore();
+  const { isReady, isSignedIn, pendingUrl, setPendingUrl, identifyListing, isBusy } = useAppStore();
   const processed = useRef(false);
   const sharedUrl = useMemo(() => sharedPayloads.map((payload) => findUrl(payload.value)).find(Boolean) ?? null, [sharedPayloads]);
+  const candidateUrl = sharedUrl ?? pendingUrl;
 
   useEffect(() => {
     if (sharedUrl) setPendingUrl(sharedUrl);
   }, [setPendingUrl, sharedUrl]);
 
   useEffect(() => {
-    if (!isReady || !isSignedIn || !sharedUrl || processed.current || !isLeboncoinUrl(sharedUrl)) return;
+    if (!isReady || !isSignedIn || !candidateUrl || processed.current || !isLeboncoinUrl(candidateUrl)) return;
     processed.current = true;
-    identifyListing(sharedUrl).then((listing) => {
+    identifyListing(candidateUrl).then((listing) => {
       if (listing) {
         clearSharedPayloads();
         router.replace('/listing-preview');
       }
     });
-  }, [clearSharedPayloads, identifyListing, isReady, isSignedIn, sharedUrl]);
+  }, [candidateUrl, clearSharedPayloads, identifyListing, isReady, isSignedIn]);
 
-  if (isReady && !isSignedIn && sharedUrl) return <Redirect href="/auth" />;
+  if (isReady && !isSignedIn && candidateUrl) return <Redirect href="/auth" />;
+  if (!isResolving && !candidateUrl) return <Redirect href="/(tabs)" />;
 
-  const invalid = !isResolving && sharedPayloads.length > 0 && (!sharedUrl || !isLeboncoinUrl(sharedUrl));
+  const invalid = !isResolving && Boolean(candidateUrl) && !isLeboncoinUrl(candidateUrl ?? '');
   return (
     <Screen contentStyle={styles.content}>
       <View style={styles.icon}><Share2 size={34} color={colors.brand800} /></View>
       <Text style={styles.title}>{invalid ? 'Ce lien ne vient pas de Leboncoin' : 'On récupère ton annonce…'}</Text>
       <Text style={styles.body}>{invalid ? 'DealUp analyse pour l’instant les iPhone compatibles et les MacBook Apple Silicon publiés sur Leboncoin.' : 'Tu n’auras pas besoin de recoller le lien.'}</Text>
-      {isResolving || isBusy || !sharedUrl ? <ActivityIndicator color={colors.brand600} size="large" /> : null}
+      {isResolving || isBusy ? <ActivityIndicator color={colors.brand600} size="large" /> : null}
       {error ? <Text style={styles.error}>Le partage n’a pas pu être lu. Ouvre DealUp et colle le lien directement.</Text> : null}
-      {invalid || error ? <BrandButton label="Retourner à l’accueil" onPress={() => { clearSharedPayloads(); router.replace('/(tabs)'); }} /> : null}
+      {invalid || error ? <BrandButton label="Retourner à l’accueil" onPress={() => { clearSharedPayloads(); setPendingUrl(null); router.replace('/(tabs)'); }} /> : null}
     </Screen>
   );
 }

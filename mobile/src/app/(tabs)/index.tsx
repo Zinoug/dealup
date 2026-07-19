@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { AlertCircle, ArrowRight, ChevronRight, Clock3, Link2, Share2, Smartphone, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 
@@ -11,7 +11,6 @@ import { BrandBackground } from '@/components/brand-background';
 import { DeviceThumbnail } from '@/components/device-thumbnail';
 import { LeboncoinShareGuide } from '@/components/leboncoin-share-guide';
 import { BrandLockup } from '@/components/reference-ui';
-import { DEMO_LISTING_URL } from '@/data/mock';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, shadows, spacing, type } from '@/theme/tokens';
 import { formatEuros, isLeboncoinUrl } from '@/utils/format';
@@ -30,7 +29,7 @@ export default function HomeScreen() {
   const [toast, setToast] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
   const { identifyListing, isBusy, analyses } = useAppStore();
-  const latest = analyses[0];
+  const latest = analyses.find((item) => item.status === 'completed' && item.listing && item.device && item.verdict);
 
   useEffect(() => {
     if (!toast) return;
@@ -47,7 +46,7 @@ export default function HomeScreen() {
     else if (listing) router.push({ pathname: '/compatible-devices', params: { status: listing.compatibility?.status ?? 'UNKNOWN' } });
     else setToast('Cette annonce ne peut pas être identifiée');
   };
-  const paste = async () => { const text = await Clipboard.getStringAsync(); setUrl(text || DEMO_LISTING_URL); setToast(''); };
+  const paste = async () => { const text = await Clipboard.getStringAsync(); setUrl(text); setToast(text ? '' : 'Ton presse-papiers ne contient aucun lien'); };
 
   return (
     <View style={styles.screen}>
@@ -84,8 +83,8 @@ export default function HomeScreen() {
               </View>
             </View>
           </SafeAreaView>
-          <Pressable onPress={() => void submit()} style={({ pressed }) => [styles.verify, shadows.floating, pressed && styles.pressed]}>
-            <Text style={styles.verifyText}>{isBusy || validating ? 'Identification…' : 'Vérifier cette annonce'}</Text><ArrowRight size={26} color={colors.brand900} />
+          <Pressable accessibilityState={{ busy: isBusy || validating, disabled: isBusy || validating }} disabled={isBusy || validating} onPress={() => void submit()} style={({ pressed }) => [styles.verify, shadows.floating, pressed && styles.pressed]}>
+            <Text style={styles.verifyText}>Vérifier cette annonce</Text>{isBusy || validating ? <ActivityIndicator color={colors.brand900} /> : <ArrowRight size={26} color={colors.brand900} />}
           </Pressable>
           {toast ? <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOutDown.duration(150)} style={styles.toast}><AlertCircle size={17} color="#FFD6D1" /><Text style={styles.toastText}>{toast}</Text><Pressable onPress={() => setToast('')} hitSlop={10}><X size={15} color="#FFD6D1" /></Pressable></Animated.View> : null}
         </View>
@@ -94,8 +93,8 @@ export default function HomeScreen() {
           <Pressable onPress={() => setGuideOpen(true)} style={styles.guideLink}><Share2 size={16} color={colors.brand700} /><Text style={styles.guideText}>Comment analyser depuis Leboncoin ?</Text><ChevronRight size={15} color={colors.brand700} /></Pressable>
           <Pressable onPress={() => router.push('/compatible-devices')} style={styles.compatibleLink}><Smartphone size={15} color={colors.brand700} /><Text style={styles.guideText}>Voir les appareils compatibles</Text><ChevronRight size={15} color={colors.brand700} /></Pressable>
           <View style={styles.lastHeader}><Clock3 size={22} color={colors.brand700} /><View><Text style={styles.lastTitle}>Dernière analyse</Text><Text style={styles.today}>Aujourd’hui</Text></View></View>
-          {latest ? <Pressable onPress={() => router.push({ pathname: '/analysis/[id]', params: { id: latest.id } })} style={styles.latest}>
-            <DeviceThumbnail category={latest.device.category} size={94} />
+          {latest?.listing && latest.device && latest.verdict ? <Pressable onPress={() => router.push({ pathname: '/analysis/[id]', params: { id: latest.latestAnalysisId } })} style={styles.latest}>
+            <DeviceThumbnail uri={latest.listing.thumbnailUrl} size={94} label={`Photo de ${latest.device.displayName}`} />
             <View style={styles.latestCopy}><Text numberOfLines={1} style={styles.productTitle}>{latest.listing.title.replace(' — ', ' ')}</Text><Text style={styles.productMeta}>{formatEuros(latest.listing.priceCents)} · {latest.listing.location}</Text><View style={styles.verdictRow}><View style={styles.miniScore}><Text style={styles.score}>{(latest.verdict.dealScore / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</Text><Text style={styles.over}>/10</Text></View><View style={styles.divider} /><View style={styles.latestVerdict}><Text style={styles.verdictLabel}>●  Verdict</Text><Text numberOfLines={1} style={styles.verdict}>{verdictCopy[latest.verdict.type].title}</Text><Text numberOfLines={1} style={styles.reco}>{verdictCopy[latest.verdict.type].action}</Text></View></View></View>
             <ChevronRight size={22} color={colors.lightMuted} />
           </Pressable> : null}

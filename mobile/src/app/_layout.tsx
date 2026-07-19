@@ -1,28 +1,84 @@
-import { Stack } from 'expo-router';
+import { ClerkProvider } from '@clerk/clerk-expo';
+import { tokenCache } from '@clerk/clerk-expo/token-cache';
+import * as Sentry from '@sentry/react-native';
+import * as Notifications from 'expo-notifications';
+import { Stack, useRouter } from 'expo-router';
+import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { AppStoreProvider } from '@/store/app-store';
+import { AppErrorToast } from '@/components/app-error-toast';
 import { colors } from '@/theme/tokens';
+import { missingRequiredConfiguration, runtime } from '@/services/runtime';
 
-export default function RootLayout() {
+Sentry.init({
+  dsn: runtime.sentryDsn,
+  enabled: Boolean(runtime.sentryDsn),
+  environment: runtime.appEnv,
+  sendDefaultPii: false,
+  tracesSampleRate: runtime.appEnv === 'production' ? 0.1 : 0,
+});
+
+function NotificationRouter() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const open = (response: Notifications.NotificationResponse | null) => {
+      const analysisId = response?.notification.request.content.data?.analysis_id;
+      if (typeof analysisId === 'string' && analysisId) {
+        router.push({ pathname: '/analysis/[id]', params: { id: analysisId } });
+        void Notifications.clearLastNotificationResponseAsync();
+      }
+    };
+    void Notifications.getLastNotificationResponseAsync().then(open);
+    const subscription = Notifications.addNotificationResponseReceivedListener(open);
+    return () => subscription.remove();
+  }, [router]);
+
+  return null;
+}
+
+function RootLayout() {
+  const missing = missingRequiredConfiguration();
+  if (missing.length) {
+    return (
+      <View style={styles.configurationError}>
+        <Text style={styles.configurationTitle}>Configuration incomplète</Text>
+        <Text style={styles.configurationBody}>Ajoute {missing.join(' et ')} dans mobile/.env puis reconstruis l’application.</Text>
+      </View>
+    );
+  }
   return (
-    <AppStoreProvider>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.brand900 },
-          animation: 'slide_from_right',
-          gestureEnabled: true,
-        }}
-      >
-        <Stack.Screen name="index" options={{ animation: 'fade' }} />
-        <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
-        <Stack.Screen name="auth" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="paywall" options={{ gestureEnabled: false, animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="analysis-progress" options={{ gestureEnabled: false, animation: 'fade' }} />
-        <Stack.Screen name="analysis/[id]" options={{ animation: 'fade' }} />
-      </Stack>
-      <StatusBar style="light" />
-    </AppStoreProvider>
+    <ClerkProvider publishableKey={runtime.clerkPublishableKey} tokenCache={tokenCache}>
+      <AppStoreProvider>
+        <NotificationRouter />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.brand900 },
+            animation: 'slide_from_right',
+            gestureEnabled: true,
+          }}
+        >
+          <Stack.Screen name="index" options={{ animation: 'fade' }} />
+          <Stack.Screen name="onboarding" options={{ gestureEnabled: false }} />
+          <Stack.Screen name="auth" options={{ presentation: 'card', animation: 'fade', gestureEnabled: false }} />
+          <Stack.Screen name="paywall" options={{ gestureEnabled: false, animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="analysis-progress" options={{ gestureEnabled: false, animation: 'fade' }} />
+          <Stack.Screen name="analysis/[id]" options={{ animation: 'fade', gestureEnabled: false }} />
+        </Stack>
+        <AppErrorToast />
+        <StatusBar style="light" />
+      </AppStoreProvider>
+    </ClerkProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);
+
+const styles = StyleSheet.create({
+  configurationError: { flex: 1, justifyContent: 'center', padding: 28, backgroundColor: colors.brand900 },
+  configurationTitle: { color: colors.white, fontSize: 24, fontWeight: '700' },
+  configurationBody: { color: '#B7C7BF', fontSize: 15, lineHeight: 22, marginTop: 10 },
+});

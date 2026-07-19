@@ -10,8 +10,8 @@ const features = [
     screenshot: "/screens/official/report-overview.webp",
   },
   {
-    description: "Une offre de départ, une zone d’accord et un maximum à ne pas dépasser.",
-    label: "Prix et négociation",
+    description: "Les points forts, la prochaine action utile et les contrôles à effectuer.",
+    label: "Signaux et action",
     screenshot: "/screens/official/report-pricing.webp",
   },
   {

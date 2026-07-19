@@ -19,16 +19,33 @@ class ArchivedImage:
 
 
 class MediaStorage:
-    def __init__(self, bucket: str, region: str) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        region: str,
+        access_key_id: str = "",
+        secret_access_key: str = "",
+        session_token: str = "",
+    ) -> None:
         self.bucket = bucket
         self.region = region
+        self.client_options = {"region_name": region}
+        if access_key_id and secret_access_key:
+            self.client_options.update(
+                {
+                    "aws_access_key_id": access_key_id,
+                    "aws_secret_access_key": secret_access_key,
+                }
+            )
+            if session_token:
+                self.client_options["aws_session_token"] = session_token
 
     def build_inputs(
         self, media: list[dict[str, Any]], limit: int
     ) -> list[dict[str, str]]:
         if not media or not self.bucket:
             return []
-        client = boto3.client("s3", region_name=self.region)
+        client = boto3.client("s3", **self.client_options)
         inputs: list[dict[str, str]] = []
         for item in media[:limit]:
             object_key = item.get("object_key")
@@ -59,7 +76,7 @@ class MediaStorage:
     ) -> list[ArchivedImage]:
         if not self.bucket:
             return []
-        client = boto3.client("s3", region_name=self.region)
+        client = boto3.client("s3", **self.client_options)
         archived: list[ArchivedImage] = []
         extensions = {
             "image/jpeg": ".jpg",

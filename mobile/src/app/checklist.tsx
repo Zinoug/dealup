@@ -3,16 +3,15 @@ import { Check } from 'lucide-react-native';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, LimeButton } from '@/components/reference-ui';
-import { demoAnalysis, reportFixtures } from '@/data/mock';
+import { useAnalysisReport } from '@/hooks/use-analysis-report';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, type } from '@/theme/tokens';
 
 export default function ChecklistScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { analyses, checklistDone, toggleChecklist } = useAppStore();
-  const report = analyses.find((item) => item.id === id)
-    ?? Object.values(reportFixtures).find((item) => item.id === id)
-    ?? demoAnalysis;
+  const { checklistDone, toggleChecklist } = useAppStore();
+  const { report } = useAnalysisReport(id);
+  if (!report) return <DarkSafeScreen variant="focus"><DarkHeader title="Checklist" /><View style={styles.body}><Text style={styles.subtitle}>Chargement de la checklist…</Text></View></DarkSafeScreen>;
   const groups = [
     { title: 'Avant le rendez-vous', items: report.checklist.beforeMeeting },
     { title: 'Pendant la vérification', items: report.checklist.duringMeeting },

@@ -2,7 +2,12 @@ import json
 
 from fastapi import APIRouter, Depends, Header, Request
 
-from app.api.dependencies import CurrentUser, DbSession, settings_dependency
+from app.api.dependencies import (
+    CurrentUser,
+    DbSession,
+    revenuecat_dependency,
+    settings_dependency,
+)
 from app.core.config import Settings
 from app.core.errors import DealUpError
 from app.integrations import RevenueCatClient
@@ -16,9 +21,10 @@ router = APIRouter(prefix="/v1", tags=["billing"])
 def sync_billing(
     user: CurrentUser,
     session: DbSession,
+    revenuecat: RevenueCatClient = Depends(revenuecat_dependency),
     settings: Settings = Depends(settings_dependency),
 ) -> BillingSyncResponse:
-    return BillingService(session, settings, RevenueCatClient(settings)).sync(user)
+    return BillingService(session, settings, revenuecat).sync(user)
 
 
 @router.post("/webhooks/revenuecat", response_model=MessageResponse)

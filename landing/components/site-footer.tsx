@@ -8,8 +8,7 @@ export function SiteFooter() {
       <div className="site-footer__inner">
         <div className="site-footer__brand">
           <Brand />
-          <p>La décision plus claire avant d’acheter un appareil Apple d’occasion.</p>
-          <span>Disponible sur iPhone au lancement.</span>
+          <p>La décision plus claire avant d’acheter un appareil d’occasion.</p>
         </div>
         <div className="site-footer__links">
           <div>
@@ -21,18 +20,17 @@ export function SiteFooter() {
             ))}
           </div>
           <div>
-            <strong>DealUp</strong>
+            <strong>Informations</strong>
             <Link href="/#faq">Questions fréquentes</Link>
-            <Link href="/appareils-compatibles/">Compatibilité</Link>
-            <a href="mailto:contact@joindealup.com">Contact</a>
+            <Link href="/support/">Support</Link>
+            <Link href="/confidentialite/">Confidentialité</Link>
+            <Link href="/conditions/">Conditions</Link>
           </div>
         </div>
       </div>
       <div className="site-footer__bottom">
         <span>© {new Date().getFullYear()} DealUp</span>
-        <p>DealUp est indépendant et n’est ni affilié ni approuvé par Leboncoin ou Apple.</p>
       </div>
     </footer>
   );
 }
-

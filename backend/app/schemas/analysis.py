@@ -136,7 +136,13 @@ class MissingInformation(BaseModel):
     code: str = Field(min_length=1, max_length=80)
     priority: str = Field(pattern="^(BLOCKING|USEFUL)$")
     label: str = Field(min_length=1, max_length=300)
+    reason: str = Field(
+        default="Les éléments fournis ne permettent pas encore de confirmer ce point.",
+        min_length=1,
+        max_length=320,
+    )
     question: str = Field(min_length=1, max_length=500)
+    evidence: list[str] = Field(default_factory=list, max_length=10)
 
 
 class SellerMessages(BaseModel):
@@ -247,3 +253,15 @@ class AnalysisSummary(BaseModel):
 class AnalysisList(BaseModel):
     items: list[AnalysisSummary]
     next_cursor: str | None = None
+
+
+class AnalysisMediaItem(BaseModel):
+    id: str
+    role: str
+    ordinal: int | None
+    content_type: str
+    url: str
+
+
+class AnalysisMediaList(BaseModel):
+    items: list[AnalysisMediaItem]

@@ -1,7 +1,7 @@
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.models import Device, Media
+from app.models import Analysis, Device, Media
 
 
 class MediaRepository:
@@ -43,14 +43,36 @@ class MediaRepository:
             return []
         return list(
             self.session.scalars(
-                select(Media).where(
-                    Media.analysis_id.in_(analysis_ids), Media.user_id == user_id
-                )
+                select(Media)
+                .where(Media.analysis_id.in_(analysis_ids), Media.user_id == user_id)
+                .order_by(Media.role, Media.ordinal, Media.created_at)
             )
         )
 
     def list_owned_all(self, user_id: str) -> list[Media]:
         return list(self.session.scalars(select(Media).where(Media.user_id == user_id)))
+
+    def first_listing_by_roots(
+        self, root_ids: list[str], user_id: str
+    ) -> dict[str, Media]:
+        if not root_ids:
+            return {}
+        rows = self.session.execute(
+            select(Media, Analysis.id, Analysis.root_analysis_id)
+            .join(Analysis, Analysis.id == Media.analysis_id)
+            .where(
+                Media.user_id == user_id,
+                Media.role == "listing_photo",
+                Media.status == "ready",
+                (Analysis.id.in_(root_ids) | Analysis.root_analysis_id.in_(root_ids)),
+            )
+            .order_by(Media.ordinal, Media.created_at)
+        )
+        result: dict[str, Media] = {}
+        for media, analysis_id, root_analysis_id in rows:
+            root_id = root_analysis_id or analysis_id
+            result.setdefault(root_id, media)
+        return result
 
     def delete(self, media: Media) -> None:
         self.session.delete(media)
