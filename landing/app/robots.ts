@@ -6,7 +6,25 @@ export const dynamic = "force-static";
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
-      userAgent: "*",
+      userAgent: [
+        "*",
+        "Googlebot",
+        "Google-Extended",
+        "Bingbot",
+        "Applebot",
+        "Applebot-Extended",
+        "GPTBot",
+        "OAI-SearchBot",
+        "ChatGPT-User",
+        "ClaudeBot",
+        "Claude-SearchBot",
+        "PerplexityBot",
+        "CCBot",
+        "Bytespider",
+        "Amazonbot",
+        "cohere-ai",
+        "meta-externalagent",
+      ],
       allow: "/",
     },
     sitemap: `${SITE_URL}/sitemap.xml`,
