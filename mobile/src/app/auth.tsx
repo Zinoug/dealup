@@ -143,7 +143,7 @@ export default function AuthScreen() {
           {verification ? <Pressable onPress={() => setVerification(null)} hitSlop={12} style={styles.back}><ArrowLeft size={25} color={colors.white} /></Pressable> : null}
           <View style={[styles.brand, { marginTop: height > 850 ? 38 : 16 }]}><EntryBrand size={78} /></View>
           <View style={styles.copy}>
-            <Text style={styles.title}>{verification ? 'Entre le code reçu' : 'Bienvenue sur DealUp'}</Text>
+            <Text style={styles.title}>{verification ? 'Entre le code reçu' : 'Bienvenue sur DealUp AI'}</Text>
             <Text style={styles.subtitle}>{verification ? `Code envoyé à ${email.trim()}` : 'Vérifie ton prochain appareil avant de payer.'}</Text>
           </View>
 

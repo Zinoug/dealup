@@ -4,7 +4,7 @@ import { InformationPage } from "@/components/information-page";
 
 export const metadata: Metadata = {
   title: "Support",
-  description: "Contacter simplement le support DealUp.",
+  description: "Contacter simplement le support DealUp AI.",
   alternates: { canonical: "/support/" },
 };
 
@@ -16,7 +16,7 @@ export default function SupportPage() {
       title="Comment peut-on t’aider ?"
     >
       <section className="support-contact">
-        <h2>Contacter DealUp</h2>
+        <h2>Contacter DealUp AI</h2>
         <p>Pense à indiquer l’adresse liée à ton compte et à décrire brièvement le problème rencontré.</p>
         <a href="mailto:support@joindealup.com">support@joindealup.com</a>
       </section>

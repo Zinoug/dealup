@@ -12,7 +12,7 @@ import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
 
 export default function SellerContextScreen() {
-  const { sellerReply, sellerMediaUris, setSellerContext, startAnalysis, isBusy, usage } = useAppStore();
+  const { sellerReply, sellerMediaUris, setSellerContext, startAnalysis, hasSubscription, isBusy, usage } = useAppStore();
   const [reply, setReply] = useState(sellerReply);
   const [images, setImages] = useState(sellerMediaUris);
 
@@ -22,13 +22,17 @@ export default function SellerContextScreen() {
   };
 
   const launchAnalysis = async (includeSellerContext: boolean) => {
+    const normalizedReply = includeSellerContext ? reply.trim() : '';
+    const normalizedImages = includeSellerContext ? images : [];
+    setSellerContext(includeSellerContext, normalizedReply, normalizedImages);
+    if (!hasSubscription) {
+      router.push({ pathname: '/paywall', params: { intent: 'analysis' } });
+      return;
+    }
     if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
       router.replace('/quota');
       return;
     }
-    const normalizedReply = includeSellerContext ? reply.trim() : '';
-    const normalizedImages = includeSellerContext ? images : [];
-    setSellerContext(includeSellerContext, normalizedReply, normalizedImages);
     const id = await startAnalysis({
       alreadyContacted: includeSellerContext,
       sellerReply: normalizedReply,

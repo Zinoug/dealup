@@ -9,7 +9,7 @@ import { colors, layout, type } from '@/theme/tokens';
 import { formatEuros } from '@/utils/format';
 
 export default function ListingPreviewScreen() {
-  const { identification, hasSubscription, usage } = useAppStore();
+  const { identification } = useAppStore();
   if (!identification) return null;
   const device = identification.compatibility?.device;
   const details = [...identification.facts, ...Object.values(device?.specs ?? {}).map(String), `${identification.photoCount} photos`]
@@ -34,11 +34,7 @@ export default function ListingPreviewScreen() {
           </View>
         </GlassCard>
 
-        <View style={styles.cta}><LimeButton label="Analyser cette annonce" onPress={() => {
-          if (!hasSubscription) return router.push('/paywall');
-          const hasIncludedUnit = usage.used < usage.limit;
-          return router.push(hasIncludedUnit || usage.topUpRemaining > 0 ? '/analysis-setup' : '/quota');
-        }} /></View>
+        <View style={styles.cta}><LimeButton label="Analyser cette annonce" onPress={() => router.push('/analysis-setup')} /></View>
       </ScrollView>
     </DarkSafeScreen>
   );

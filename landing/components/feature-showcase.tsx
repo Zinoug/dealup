@@ -29,7 +29,7 @@ export function FeatureShowcase() {
     <div className="feature-showcase">
       <div className="feature-showcase__phone">
         <DeviceMockup
-          alt={`Capture DealUp — ${activeFeature.label}`}
+          alt={`Capture DealUp AI : ${activeFeature.label}`}
           screenshot={activeFeature.screenshot}
         />
         <div aria-label="Choisir l’écran présenté" className="feature-showcase__dots">

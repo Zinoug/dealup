@@ -252,7 +252,7 @@ function DealupLogo({ size }: { size: number }) {
   return (
     <View style={[styles.logoStage, { height: size + 28 }]}>
       <AppLogo size={size} elevated />
-      <Text style={styles.wordmark}>Deal<Text style={styles.lime}>Up</Text></Text>
+      <Text style={styles.wordmark}>Deal<Text style={styles.lime}>Up</Text> AI</Text>
     </View>
   );
 }

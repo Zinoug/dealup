@@ -15,7 +15,7 @@ Read `../AGENTS.md`, `README.md`, `../docs/product/product.md`, `../DESIGN.md`, 
 
 ## Product rules
 
-- The dominant path is auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → teaser → hard paywall → purchase mode → seller context → analysis → report → action/reanalysis.
+- The dominant path is auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → action/reanalysis.
 - Account is required before any URL identification.
 - No trial and no complete free analysis. The teaser cannot expose score, verdict, price estimate, risks, or seller messages.
 - Weekly is 4.99 EUR / 15 analyses; Monthly is 12.99 EUR / 60; top-up is 10 / 4.99 EUR.

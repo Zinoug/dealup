@@ -7,7 +7,7 @@ type BrandProps = {
 
 export function Brand({ compact = false }: BrandProps) {
   return (
-    <Link className="brand" href="/" aria-label="DealUp — Accueil">
+    <Link className="brand" href="/" aria-label="DealUp AI, accueil">
       <Image
         alt=""
         className="brand__icon"
@@ -17,7 +17,7 @@ export function Brand({ compact = false }: BrandProps) {
         width={compact ? 38 : 44}
       />
       <span className="brand__name">
-        Deal<span>Up</span>
+        Deal<span>Up</span> AI
       </span>
     </Link>
   );

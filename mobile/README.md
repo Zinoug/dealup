@@ -2,6 +2,8 @@
 
 Application iOS Expo, React Native et TypeScript. Le runtime normal est entièrement connecté à FastAPI, Clerk et RevenueCat : il n’existe plus de faux compte, faux achat, faux quota ou faux historique.
 
+Le parcours d’une annonce reste identique pour un compte gratuit et un abonné jusqu’au dernier clic « Lancer l’analyse ». Le paywall apparaît alors uniquement si nécessaire ; un achat réussi démarre directement l’analyse avec le contexte déjà saisi, sans nouvelle saisie et sans consommation avant paiement.
+
 ## Démarrage
 
 Cette app contient du code natif (RevenueCat, Apple Sign-In, notifications, Sentry et extension de partage). Expo Go ne suffit pas.

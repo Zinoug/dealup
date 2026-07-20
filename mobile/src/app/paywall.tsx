@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Check, Circle, RotateCcw, X } from 'lucide-react-native';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -10,11 +10,27 @@ import type { PlanId } from '@/types/domain';
 import { formatMonthlyPricePerWeek } from '@/utils/pricing';
 
 export default function PaywallScreen() {
-  const { selectedPlan, choosePlan, purchasePlan, restorePurchases, identification, isBusy, billingProducts } = useAppStore();
+  const { intent } = useLocalSearchParams<{ intent?: string }>();
+  const { selectedPlan, choosePlan, purchasePlan, restorePurchases, identification, purchaseMode, alreadyContacted, startAnalysis, isBusy, billingProducts } = useAppStore();
   const device = identification?.compatibility?.device;
   const target = device?.category === 'MACBOOK' ? 'ce MacBook' : device?.category === 'IPHONE' ? 'cet iPhone' : 'cet appareil';
+  const continueAfterAccess = async () => {
+    if (intent === 'analysis' && identification && purchaseMode) {
+      const id = await startAnalysis();
+      if (id) {
+        router.replace({ pathname: '/analysis-progress', params: { id } });
+      } else {
+        router.replace(alreadyContacted ? '/seller-context' : '/analysis-setup');
+      }
+      return;
+    }
+    router.replace('/(tabs)');
+  };
   const buy = async () => {
-    if (await purchasePlan()) router.replace(identification ? '/analysis-setup' : '/(tabs)');
+    if (await purchasePlan()) await continueAfterAccess();
+  };
+  const restore = async () => {
+    if (await restorePurchases()) await continueAfterAccess();
   };
   const monthly = billingProducts.monthly;
   const weekly = billingProducts.weekly;
@@ -53,7 +69,7 @@ export default function PaywallScreen() {
 
         <LimeButton label={isBusy ? 'Activation…' : 'Continuer'} onPress={() => void buy()} style={styles.cta} />
         <Text style={styles.trust}>Paiement sécurisé par Apple · Annulable à tout moment.</Text>
-        <Pressable onPress={() => void restorePurchases()} style={styles.restore}><RotateCcw size={14} color={colors.lime} /><Text style={styles.restoreText}>Restaurer mes achats</Text></Pressable>
+        <Pressable onPress={() => void restore()} style={styles.restore}><RotateCcw size={14} color={colors.lime} /><Text style={styles.restoreText}>Restaurer mes achats</Text></Pressable>
         <Text style={styles.links}>Conditions d’utilisation · Confidentialité</Text>
       </ScrollView>
     </DarkSafeScreen>

@@ -1,6 +1,6 @@
-# DealUp Landing
+# DealUp AI Landing
 
-Landing marketing statique de DealUp destinée à `joindealup.com`.
+Landing marketing statique de DealUp AI destinée à `joindealup.com`.
 
 Elle présente uniquement l’application, son fonctionnement, ses rapports et les appareils compatibles. Les tarifs restent volontairement absents de la landing. Elle n’intègre ni analyse web, ni waitlist, ni parrainage.
 
@@ -29,10 +29,10 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 
 ## Pages indexables
 
-- `/` — présentation complète de DealUp ;
-- `/support/` — contact support par e-mail ;
-- `/confidentialite/` — politique de confidentialité ;
-- `/conditions/` — conditions d’utilisation ;
+- `/` : présentation complète de DealUp AI ;
+- `/support/` : contact support par e-mail ;
+- `/confidentialite/` : politique de confidentialité ;
+- `/conditions/` : conditions d’utilisation ;
 - `/robots.txt` ;
 - `/sitemap.xml` ;
 - `/manifest.webmanifest`.

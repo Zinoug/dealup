@@ -15,7 +15,7 @@ export function AppLogo({ size = 72, elevated = false }: AppLogoProps) {
         source={require('../../assets/images/dealup-app-icon.png')}
         style={[styles.image, { width: size, height: size, borderRadius: size * 0.24 }]}
         contentFit="cover"
-        accessibilityLabel="Logo DealUp"
+        accessibilityLabel="Logo DealUp AI"
       />
     </View>
   );

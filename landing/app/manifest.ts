@@ -4,8 +4,8 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "DealUp",
-    short_name: "DealUp",
+    name: "DealUp AI",
+    short_name: "DealUp AI",
     description:
       "Analyse les annonces Leboncoin d’iPhone et de MacBook avant l’achat.",
     start_url: "/",

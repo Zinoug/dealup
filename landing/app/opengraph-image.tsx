@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "DealUp — Vérifie l’appareil avant de l’acheter";
+export const alt = "DealUp AI | Vérifie l’appareil avant de l’acheter";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 export const dynamic = "force-static";
@@ -25,7 +25,7 @@ export default function OpenGraphImage() {
       >
         <div style={{ display: "flex", flexDirection: "column", width: 720 }}>
           <div style={{ alignItems: "center", display: "flex", fontSize: 42, fontWeight: 800, letterSpacing: "-2px" }}>
-            Deal<span style={{ color: "#bafd23" }}>Up</span>
+            Deal<span style={{ color: "#bafd23" }}>Up</span> AI
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", fontSize: 72, fontWeight: 800, letterSpacing: "-4px", lineHeight: 0.98, marginTop: 60 }}>
             Vérifie l’appareil <span style={{ color: "#bafd23" }}>avant</span> de l’acheter.

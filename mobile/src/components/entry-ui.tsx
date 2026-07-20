@@ -18,7 +18,7 @@ export function EntryScreen({ children, style }: PropsWithChildren<{ style?: Sty
 }
 
 export function EntryBrand({ size = 94 }: { size?: number }) {
-  return <View style={styles.brand}><AppLogo size={size} elevated /><Text style={styles.wordmark}>Deal<Text style={styles.lime}>Up</Text></Text></View>;
+  return <View style={styles.brand}><AppLogo size={size} elevated /><Text style={styles.wordmark}>Deal<Text style={styles.lime}>Up</Text> AI</Text></View>;
 }
 
 export function EntryPrimaryButton({ label, onPress, icon = <ArrowRight size={21} color={colors.brand900} />, loading = false, style }: { label: string; onPress: () => void; icon?: ReactNode; loading?: boolean; style?: StyleProp<ViewStyle> }) {

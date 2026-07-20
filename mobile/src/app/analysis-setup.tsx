@@ -11,7 +11,7 @@ import { useAppStore } from '@/store/app-store';
 import { colors, layout, spacing, type } from '@/theme/tokens';
 
 export default function AnalysisSetupScreen() {
-  const { purchaseMode, setPurchaseMode, alreadyContacted, setSellerContext, identification, startAnalysis, isBusy, usage } = useAppStore();
+  const { purchaseMode, setPurchaseMode, alreadyContacted, setSellerContext, identification, startAnalysis, hasSubscription, isBusy, usage } = useAppStore();
   const [step, setStep] = useState<1 | 2>(1);
   const deviceName = identification?.compatibility?.device?.category === 'MACBOOK' ? 'ce MacBook' : 'cet iPhone';
 
@@ -21,11 +21,15 @@ export default function AnalysisSetupScreen() {
       router.push('/seller-context');
       return;
     }
+    setSellerContext(false);
+    if (!hasSubscription) {
+      router.push({ pathname: '/paywall', params: { intent: 'analysis' } });
+      return;
+    }
     if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
       router.replace('/quota');
       return;
     }
-    setSellerContext(false);
     const id = await startAnalysis({ alreadyContacted: false });
     if (id) router.replace({ pathname: '/analysis-progress', params: { id } });
   };

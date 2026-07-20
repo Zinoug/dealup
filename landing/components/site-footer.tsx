@@ -29,7 +29,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="site-footer__bottom">
-        <span>© {new Date().getFullYear()} DealUp</span>
+        <span>© {new Date().getFullYear()} DealUp AI</span>
       </div>
     </footer>
   );

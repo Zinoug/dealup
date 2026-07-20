@@ -10,7 +10,7 @@ import { colors } from '@/theme/tokens';
 
 const pages = [
   { title: 'Ouvre l’annonce', body: 'Depuis l’annonce Leboncoin qui t’intéresse, ouvre le menu de partage.', visual: 'listing' as const },
-  { title: 'Choisis DealUp', body: 'Dans la feuille de partage de ton iPhone, sélectionne l’application DealUp.', visual: 'share' as const },
+  { title: 'Choisis DealUp AI', body: 'Dans la feuille de partage de ton iPhone, sélectionne l’application DealUp AI.', visual: 'share' as const },
   { title: 'L’analyse est prête', body: 'DealUp récupère le lien, identifie l’iPhone et prépare ton analyse.', visual: 'dealup' as const },
 ];
 
@@ -63,8 +63,8 @@ function GuideVisual({ kind, step }: { kind: 'listing' | 'share' | 'dealup'; ste
     <View style={styles.visual}>
       <View style={styles.stepBadge}><Text style={styles.stepText}>{step}</Text></View>
       {kind === 'listing' ? <View style={styles.fakePhone}><View style={styles.orangeMark} /><View style={styles.fakePhoto} /><View style={styles.fakeCopy}><View style={styles.fakeLineWide} /><View style={styles.fakeLine} /><View style={styles.fakePrice} /></View><View style={styles.shareCircle}><Share2 size={19} color={colors.lime} /></View></View> : null}
-      {kind === 'share' ? <View style={styles.shareSheet}><View style={styles.shareHandle} /><Text style={styles.shareTitle}>Partager avec</Text><View style={styles.appRow}><View style={styles.appLogo}><AppLogo size={48} /></View><View><Text style={styles.appName}>DealUp</Text><Text style={styles.appHint}>Analyser cette annonce</Text></View><ExternalLink size={18} color={colors.lime} /></View><View style={styles.mutedRow} /><View style={styles.mutedRow} /></View> : null}
-      {kind === 'dealup' ? <View style={styles.resultCard}><AppLogo size={66} /><Text style={styles.resultTitle}>Annonce identifiée</Text><Text style={styles.resultMeta}>iPhone 15 Pro · 750 €</Text><View style={styles.resultButton}><Text style={styles.resultButtonText}>Continuer dans DealUp</Text></View></View> : null}
+      {kind === 'share' ? <View style={styles.shareSheet}><View style={styles.shareHandle} /><Text style={styles.shareTitle}>Partager avec</Text><View style={styles.appRow}><View style={styles.appLogo}><AppLogo size={48} /></View><View><Text style={styles.appName}>DealUp AI</Text><Text style={styles.appHint}>Analyser cette annonce</Text></View><ExternalLink size={18} color={colors.lime} /></View><View style={styles.mutedRow} /><View style={styles.mutedRow} /></View> : null}
+      {kind === 'dealup' ? <View style={styles.resultCard}><AppLogo size={66} /><Text style={styles.resultTitle}>Annonce identifiée</Text><Text style={styles.resultMeta}>iPhone 15 Pro · 750 €</Text><View style={styles.resultButton}><Text style={styles.resultButtonText}>Continuer dans DealUp AI</Text></View></View> : null}
     </View>
   );
 }

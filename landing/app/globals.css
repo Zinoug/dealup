@@ -83,28 +83,61 @@ body {
 }
 
 .minimal-social-proof {
+  position: relative;
   display: inline-flex;
-  min-height: 38px;
-  margin-bottom: 28px;
-  padding: 0 14px;
+  width: 214px;
+  min-height: 58px;
+  margin-bottom: 22px;
   align-items: center;
-  gap: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.78);
-  background: rgba(255, 255, 255, 0.07);
-  font-size: 0.78rem;
-  backdrop-filter: blur(12px);
+  justify-content: center;
 }
 
-.minimal-social-proof span {
-  color: #f7b928;
-  font-size: 0.68rem;
-  letter-spacing: 0.07em;
+.minimal-social-proof__laurel {
+  position: absolute;
+  top: 0;
+  width: 30px;
+  height: 58px;
+  background: linear-gradient(180deg, #f7d376 0%, #c68f2c 100%);
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  opacity: 0.92;
+}
+
+.minimal-social-proof__laurel--left {
+  left: 0;
+  mask-image: url("/laurel-left.png");
+}
+
+.minimal-social-proof__laurel--right {
+  right: 0;
+  mask-image: url("/laurel-right.png");
+}
+
+.minimal-social-proof__copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 146px;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.minimal-social-proof__stars {
+  display: block;
+  width: 68px;
+  height: 12px;
+  color: #f4c453;
+  fill: currentColor;
 }
 
 .minimal-social-proof strong {
-  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.86rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
 .minimal-hero__copy > p {

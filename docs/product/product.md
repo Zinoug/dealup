@@ -61,21 +61,23 @@ flowchart TD
     F --> G{"Appareil compatible ?"}
     G -->|"Non ou inconnu"| H["Page appareils compatibles"]
     G -->|"Oui"| I["Teaser personnalisé"]
-    I --> J{"Abonnement actif ?"}
-    J -->|"Non"| K["Hard paywall"]
-    K -->|"Achat réussi"| L["Préparation de l’analyse"]
-    J -->|"Oui"| L
+    I --> L["Préparation de l’analyse"]
     L --> M["Mode d’achat"]
     M --> N["Échange vendeur ?"]
     N -->|"Oui"| O["Contexte vendeur privé"]
-    N -->|"Non"| P["Analyse"]
-    O --> P
+    N -->|"Non"| J{"Abonnement actif ?"}
+    O --> J
+    J -->|"Non"| K["Hard paywall au lancement"]
+    K -->|"Achat réussi"| P["Analyse"]
+    J -->|"Oui"| P
     P --> Q["Rapport DealUp"]
     Q --> R["Action recommandée"]
     Q --> S["Réanalyse gratuite"]
 ```
 
 Si une URL partagée arrive avant connexion, elle est conservée localement. Après authentification, le parcours reprend automatiquement sans demander de recoller le lien.
+
+Un utilisateur gratuit remplit le même contexte d’achat et vendeur qu’un abonné. Le contrôle d’accès intervient seulement sur l’action finale « Lancer l’analyse ». Avant un achat réussi, aucun quota n’est réservé et aucun appel Gemini n’est lancé. Après achat, l’analyse démarre directement avec le contexte déjà saisi.
 
 L’onboarding post-inscription comporte cinq écrans : démonstration statique des quatre étapes sur une vraie photo d’annonce de démonstration, comparaison animée prix affiché/offre avec une économie d’exemple clairement mise en avant, compression visuelle des recherches en un rapport DealUp, courbe de clarté grise « sans DealUp » face à la courbe verte « avec DealUp », puis demande contextuelle des notifications. Refuser ou reporter les notifications ne bloque jamais l’app.
 

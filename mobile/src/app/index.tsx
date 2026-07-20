@@ -14,7 +14,7 @@ export default function IndexScreen() {
       <Screen>
         <View style={styles.splash}>
           <AppLogo size={112} elevated />
-          <Text style={styles.name}>DealUp</Text>
+          <Text style={styles.name}>DealUp AI</Text>
           <ActivityIndicator color={colors.lime} style={styles.loader} />
         </View>
       </Screen>

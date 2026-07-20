@@ -74,7 +74,7 @@ export default function ProfileScreen() {
 
       <BrandButton label="Se déconnecter" icon={LogOut} variant="ghost" onPress={() => { void signOut().then(() => router.replace('/auth')); }} />
       <Pressable onPress={() => setDeleteOpen(true)} style={({ pressed }) => [styles.deleteLink, pressed && styles.pressed]}><Trash2 color="#C54A43" size={17} /><Text style={styles.deleteLinkText}>Supprimer mon compte</Text></Pressable>
-      <Text style={styles.version}>DealUp 1.0.0</Text>
+      <Text style={styles.version}>DealUp AI 1.0.0</Text>
 
       <Modal animationType="slide" onRequestClose={() => setDeleteOpen(false)} presentationStyle="pageSheet" visible={deleteOpen}>
         <SafeAreaView style={styles.deleteSafe}>

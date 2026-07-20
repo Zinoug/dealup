@@ -7,6 +7,8 @@ Les écrans utilisent déjà l’icône DealUp fournie. Les autres emplacements 
 | Fichier | Usage |
 | --- | --- |
 | `images/dealup-app-icon.png` | icône, splash et logo affiché dans l’application |
+| `images/dealup-app-icon-ios.png` | icône locale transparente actuellement utilisée par Expo et Xcode |
+| `images/dealup-app-icon-app-store.png` | variante opaque 1024 × 1024 à sélectionner avant l’envoi App Store |
 | `hero/home-tag-background.png` | fond photographique plein bord du hero d’accueil |
 | `backgrounds/entry-auth-background.png` | fond exact des écrans d’entrée, démonstration onboarding et connexion |
 | `devices/onboarding-listing.png` | vraie photo Leboncoin réservée à la démonstration statique post-inscription |

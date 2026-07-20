@@ -32,7 +32,7 @@ export function BrandLockup({ compact = false, centered = false }: { compact?: b
       <View style={{ width: size, height: size, borderRadius: compact ? 15 : 21, overflow: 'hidden' }}>
         <Image source={require('../../assets/images/dealup-app-icon.png')} style={{ width: size, height: size }} contentFit="contain" />
       </View>
-      <Text style={[styles.brandText, !compact && styles.brandTextLarge]}>Deal<Text style={styles.lime}>Up</Text></Text>
+      <Text style={[styles.brandText, !compact && styles.brandTextLarge]}>Deal<Text style={styles.lime}>Up</Text> AI</Text>
     </View>
   );
 }

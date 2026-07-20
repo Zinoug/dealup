@@ -73,7 +73,7 @@ export function StoreBadges({
           const available = store === "app_store" && Boolean(APP_STORE_URL);
           return (
             <button
-              aria-label={available ? badge.alt : `${badge.alt} — bientôt disponible`}
+              aria-label={available ? badge.alt : `${badge.alt}, bientôt disponible`}
               className="store-badge"
               key={store}
               onClick={() => selectStore(store)}
@@ -110,7 +110,7 @@ export function StoreBadges({
               width={72}
             />
             <h2 id="store-modal-title">Bientôt disponible.</h2>
-            <p>DealUp arrive bientôt.</p>
+            <p>DealUp AI arrive bientôt.</p>
             <button onClick={() => setSelectedStore(null)} type="button">
               Fermer
             </button>

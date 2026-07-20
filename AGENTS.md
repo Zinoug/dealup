@@ -120,7 +120,7 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 ## Mobile and Landing
 
-Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → compatibility → private Piloterr teaser → hard paywall when needed → purchase mode → seller context → analysis → report → reanalysis/history/profile.
+Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → compatibility → private Piloterr teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → reanalysis/history/profile.
 
 The report is one scrollable screen with four deterministic section orders (`BUY`, `NEGOTIATE`, `VERIFY_FIRST`, `PASS`) and category-specific checklist content.
 
