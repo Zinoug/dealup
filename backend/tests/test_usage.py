@@ -34,6 +34,17 @@ def test_topup_is_used_only_after_included_quota() -> None:
                 current_period_ends_at=period_end,
             )
         )
+        session.add(
+            UsageEvent(
+                user_id=user.id,
+                kind=UsageEventKind.INCLUDED_CREDIT,
+                amount=15,
+                period_started_at=now,
+                period_ends_at=period_end,
+                source_event_id="subscription-period:test-weekly",
+            )
+        )
+        session.flush()
         for index in range(15):
             session.add(
                 UsageEvent(
@@ -82,5 +93,53 @@ def test_topup_is_used_only_after_included_quota() -> None:
         assert error.value.code == "QUOTA_EXHAUSTED"
         assert error.value.details["available_upsells"] == [
             "upgrade_monthly",
-            "top_up_10",
+            "top_up_15",
+            "top_up_40",
         ]
+
+
+def test_unused_subscription_credits_accumulate_across_renewals() -> None:
+    now = datetime.now(timezone.utc)
+    with session_factory()() as session:
+        user = User(clerk_user_id="user_accumulated_quota_test")
+        session.add(user)
+        session.flush()
+        session.add(
+            Subscription(
+                user_id=user.id,
+                plan=SubscriptionPlan.WEEKLY,
+                status=SubscriptionStatus.ACTIVE,
+                current_period_started_at=now,
+                current_period_ends_at=now + timedelta(days=7),
+            )
+        )
+        session.add_all(
+            [
+                UsageEvent(
+                    user_id=user.id,
+                    kind=UsageEventKind.INCLUDED_CREDIT,
+                    amount=15,
+                    source_event_id="subscription-period:week-1",
+                ),
+                UsageEvent(
+                    user_id=user.id,
+                    kind=UsageEventKind.INCLUDED_CREDIT,
+                    amount=15,
+                    source_event_id="subscription-period:week-2",
+                ),
+                UsageEvent(
+                    user_id=user.id,
+                    kind=UsageEventKind.INCLUDED_DEBIT,
+                    amount=-4,
+                    period_started_at=now,
+                    period_ends_at=now + timedelta(days=7),
+                    source_event_id="four-analyses-used",
+                ),
+            ]
+        )
+        session.flush()
+
+        snapshot = UsageService(session).snapshot(user)
+
+        assert snapshot.included.remaining == 26
+        assert snapshot.included.limit == 15

@@ -1,6 +1,6 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { ArrowUpRight, Bell, ChevronRight, CircleHelp, FileText, Grid2X2, LogOut, Plus, RotateCcw, Shield, Smartphone, Trash2, X } from 'lucide-react-native';
+import { ArrowUpRight, Bell, ChevronRight, CircleHelp, FileText, Grid2X2, LogOut, Plus, RotateCcw, Shield, Smartphone, Star, Trash2, X } from 'lucide-react-native';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -8,7 +8,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppLogo } from '@/components/app-logo';
 import { BrandButton } from '@/components/brand-button';
 import { Screen } from '@/components/screen';
+import { openAppStoreReview } from '@/services/app-review';
+import { externalLinks, openExternalLink } from '@/services/external-links';
 import { runtime } from '@/services/runtime';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
 
@@ -16,10 +19,10 @@ export default function ProfileScreen() {
   const { usage, hasSubscription, choosePlan, signOut, deleteAccount, requestNotifications, isBusy, resetLocalDevelopmentState, userName, userEmail } = useAppStore();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirmation, setConfirmation] = useState('');
-  const remaining = Math.max(usage.limit - usage.used, 0);
+  const remaining = usage.includedRemaining + usage.topUpRemaining;
   const remainingRatio = usage.limit > 0 ? Math.min(remaining / usage.limit, 1) : 0;
   const planName = usage.plan === 'monthly' ? 'Mensuel' : usage.plan === 'weekly' ? 'Hebdomadaire' : 'Accès DealUp';
-  const resetLabel = usage.renewsLabel.replace('Renouvellement', 'Remis à zéro');
+  const resetLabel = usage.renewsLabel;
 
   const reset = () => Alert.alert('Réinitialiser l’interface locale ?', 'L’onboarding et la checklist seront réinitialisés. Ton compte et tes analyses restent intacts.', [
     { text: 'Garder mes données', style: 'cancel' },
@@ -28,12 +31,21 @@ export default function ProfileScreen() {
   const enableNotifications = async () => {
     const result = await requestNotifications();
     if (result === 'enabled') {
-      Alert.alert('Notifications activées', 'DealUp t’avertira uniquement lorsqu’une analyse se termine.');
+      Alert.alert('Rappel activé', 'DealUp te rappellera chaque jour à 18 h 30 de vérifier tes annonces.');
     } else if (result === 'denied') {
       Alert.alert('Notifications désactivées', 'Tu peux les réactiver dans les réglages iOS.', [
         { text: 'Plus tard', style: 'cancel' },
         { text: 'Ouvrir les réglages', onPress: () => void Linking.openSettings() },
       ]);
+    } else {
+      Alert.alert('Notifications indisponibles', 'Le rappel quotidien n’est pas disponible sur cet appareil.');
+    }
+  };
+  const rateApp = async () => {
+    const result = await openAppStoreReview();
+    telemetry.capture('app_review_action_used', { result, source: 'profile' });
+    if (result === 'unavailable') {
+      Alert.alert('Notation indisponible', 'La page App Store de DealUp sera accessible ici dès sa publication.');
     }
   };
 
@@ -50,7 +62,7 @@ export default function ProfileScreen() {
             <View style={styles.usageTrack}><View style={[styles.usageFill, { width: `${remainingRatio * 100}%` }]} /></View>
             <View style={styles.accessActions}>
               {usage.plan === 'weekly' ? <AccessAction icon={ArrowUpRight} label="Passer au Mensuel" onPress={() => { choosePlan('monthly'); router.push('/paywall'); }} /> : null}
-              <AccessAction icon={Plus} label="Ajouter 10 analyses" onPress={() => router.push('/quota')} />
+              <AccessAction icon={Plus} label="Ajouter des analyses" onPress={() => router.push('/quota')} />
             </View>
           </>
         ) : (
@@ -64,11 +76,12 @@ export default function ProfileScreen() {
 
       <View style={styles.settings}>
         {runtime.devTools ? <SettingRow icon={Grid2X2} label="Laboratoire des rapports" onPress={() => router.push('/report-lab')} /> : null}
-        <SettingRow icon={Bell} label="Notifications d’analyse" onPress={() => void enableNotifications()} />
+        <SettingRow icon={Bell} label="Rappel quotidien" onPress={() => void enableNotifications()} />
         <SettingRow icon={Smartphone} label="Appareils compatibles" onPress={() => router.push('/compatible-devices')} />
-        <SettingRow icon={Shield} label="Confidentialité" />
-        <SettingRow icon={FileText} label="Conditions d’utilisation" />
-        <SettingRow icon={CircleHelp} label="Aide et contact" />
+        <SettingRow icon={Star} label="Noter DealUp" onPress={() => void rateApp()} />
+        <SettingRow icon={Shield} label="Confidentialité" onPress={() => void openExternalLink(externalLinks.privacy)} />
+        <SettingRow icon={FileText} label="Conditions d’utilisation" onPress={() => void openExternalLink(externalLinks.terms)} />
+        <SettingRow icon={CircleHelp} label="Aide et contact" onPress={() => void openExternalLink(externalLinks.support)} />
         {runtime.devTools ? <SettingRow icon={RotateCcw} label="Réinitialiser l’interface locale" onPress={reset} /> : null}
       </View>
 

@@ -35,6 +35,6 @@ The system instruction and raw JSON example live directly in `integrations/gemin
 
 Never log raw inputs, prompts, seller context, image URLs, API keys, or model output. Never keep a DB transaction open during a provider call. Never use Gemini server-side conversation storage unless the privacy decision changes explicitly.
 
-Provider failures must be converted to stable internal codes. Push and analytics failures never change an already completed analysis.
+Provider failures must be converted to stable internal codes. Analytics failures never change an already completed analysis. The worker does not send notifications.
 
 Tests use fakes and must never consume Piloterr or Gemini credits. Keep contract fixtures for four templates across both supported categories and assert one Gemini invocation.

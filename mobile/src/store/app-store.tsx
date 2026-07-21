@@ -2,9 +2,10 @@ import { useAuth, useUser } from '@clerk/clerk-expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 
+import { resetInAppReviewRequestForDevelopment } from '@/services/app-review';
 import { dealupApi } from '@/services/dealup-api';
-import { enableAnalysisNotifications } from '@/services/notifications';
-import { revenueCat, type BillingProducts } from '@/services/revenuecat';
+import { enableDailyReminder } from '@/services/notifications';
+import { revenueCat, type BillingProducts, type TopUpQuantity } from '@/services/revenuecat';
 import { telemetry } from '@/services/telemetry';
 import type {
   AnalysisResult,
@@ -28,6 +29,8 @@ interface StartAnalysisContext {
   sellerReply?: string;
   sellerMediaUris?: string[];
 }
+
+type ListingSubmissionSource = 'manual' | 'share_extension';
 
 interface AppState extends PersistedState {
   isReady: boolean;
@@ -55,11 +58,11 @@ interface AppState extends PersistedState {
   deleteAccount: () => Promise<boolean>;
   signOut: () => Promise<void>;
   setPendingUrl: (url: string | null) => void;
-  identifyListing: (url: string) => Promise<ListingTeaser | null>;
+  identifyListing: (url: string, source?: ListingSubmissionSource) => Promise<ListingTeaser | null>;
   choosePlan: (plan: PlanId) => void;
   purchasePlan: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
-  purchaseTopUp: () => Promise<boolean>;
+  purchaseTopUp: (quantity: TopUpQuantity) => Promise<boolean>;
   refreshAccount: () => Promise<void>;
   loadHistory: () => Promise<void>;
   loadAnalysis: (id: string, force?: boolean) => Promise<AnalysisResult | null>;
@@ -86,16 +89,26 @@ const emptyUsage: Usage = {
   active: false,
   used: 0,
   limit: 0,
+  includedRemaining: 0,
   topUpRemaining: 0,
   renewsLabel: 'Aucune formule active',
 };
 
-const emptyProducts: BillingProducts = { weekly: null, monthly: null, topUp: null };
+const emptyProducts: BillingProducts = { weekly: null, monthly: null, topUp15: null, topUp40: null };
 const AppStoreContext = createContext<AppState | null>(null);
 
 function errorMessage(reason: unknown, fallback: string): string {
   if (typeof reason === 'object' && reason && 'userCancelled' in reason && reason.userCancelled) return '';
   return reason instanceof Error ? reason.message : fallback;
+}
+
+function errorCode(reason: unknown): string {
+  if (typeof reason === 'object' && reason && 'code' in reason && typeof reason.code === 'string') return reason.code;
+  return 'UNKNOWN_ERROR';
+}
+
+function isPurchaseCancelled(reason: unknown): boolean {
+  return Boolean(typeof reason === 'object' && reason && 'userCancelled' in reason && reason.userCancelled);
 }
 
 export function AppStoreProvider({ children }: PropsWithChildren) {
@@ -149,7 +162,16 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const refreshUsage = useCallback(async () => {
     if (!isSignedIn) return;
     try {
-      setUsage(await dealupApi.getUsage());
+      const nextUsage = await dealupApi.getUsage();
+      setUsage(nextUsage);
+      telemetry.setPersonProperties({
+        plan: nextUsage.plan,
+        subscription_active: nextUsage.active,
+        quota_limit: nextUsage.limit,
+        quota_used: nextUsage.used,
+        quota_remaining: nextUsage.includedRemaining + nextUsage.topUpRemaining,
+        topup_remaining: nextUsage.topUpRemaining,
+      });
     } catch (reason) {
       telemetry.error(reason, { operation: 'load_usage' });
     }
@@ -170,6 +192,12 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
         email: account.email,
         auth_provider: account.authProvider,
         plan: account.usage.plan,
+        subscription_active: account.usage.active,
+        quota_limit: account.usage.limit,
+        quota_used: account.usage.used,
+        quota_remaining: account.usage.includedRemaining + account.usage.topUpRemaining,
+        topup_remaining: account.usage.topUpRemaining,
+        onboarding_completed: persisted.onboardingComplete,
         account_created_at: account.createdAt,
       });
     } catch (reason) {
@@ -177,7 +205,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       await refreshUsage();
     }
     await history;
-  }, [isSignedIn, loadHistory, refreshUsage]);
+  }, [isSignedIn, loadHistory, persisted.onboardingComplete, refreshUsage]);
 
   useEffect(() => {
     if (!isSignedIn || !userId) {
@@ -199,6 +227,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
 
   const completeOnboarding = useCallback(() => {
     telemetry.capture('onboarding_completed');
+    telemetry.setPersonProperties({ onboarding_completed: true });
     setPersisted((state) => ({ ...state, onboardingComplete: true }));
   }, []);
 
@@ -208,7 +237,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
 
   const requestNotifications = useCallback(async () => {
     try {
-      const result = await enableAnalysisNotifications();
+      const result = await enableDailyReminder();
       telemetry.capture('notification_permission_finished', { result });
       return result;
     } catch (reason) {
@@ -260,39 +289,73 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     }
   }, [clerkSignOut]);
 
-  const identifyListing = useCallback(async (url: string) => {
+  const identifyListing = useCallback(async (url: string, source: ListingSubmissionSource = 'manual') => {
     setIsBusy(true);
     setError(null);
+    telemetry.capture('listing_url_submitted', { source });
     try {
-      const listing = await dealupApi.identify(url);
+      // A share extension can cold-open the app while Clerk is still restoring its
+      // session. Fetch and pass the token explicitly so the identification cannot
+      // race the global API token provider effect.
+      let token = await getToken();
+      for (let attempt = 0; !token && attempt < 4; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        token = await getToken();
+      }
+      if (!token) throw new Error('Ta session est en cours de restauration. Réessaie dans un instant.');
+      const listing = await dealupApi.identify(url, token);
       setIdentification(listing);
       setPendingUrl(null);
-      telemetry.capture('listing_identified', { source: 'leboncoin' });
+      const compatibilityStatus = listing.compatibility?.status ?? 'UNKNOWN';
+      const deviceCategory = listing.compatibility?.device?.category ?? null;
+      telemetry.capture('listing_identified', {
+        source,
+        compatibility_status: compatibilityStatus,
+        device_category: deviceCategory,
+        photo_count: listing.photoCount,
+      });
+      if (compatibilityStatus !== 'SUPPORTED') {
+        telemetry.capture('listing_incompatible', {
+          source,
+          compatibility_status: compatibilityStatus,
+          device_category: deviceCategory,
+        });
+      }
       return listing;
     } catch (reason) {
       setError(errorMessage(reason, 'Cette annonce n’a pas pu être identifiée.'));
+      telemetry.capture('listing_identification_failed', { source, error_code: errorCode(reason) });
       telemetry.error(reason, { operation: 'identify_listing' });
       return null;
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [getToken]);
 
-  const choosePlan = useCallback((plan: PlanId) => setPersisted((state) => ({ ...state, selectedPlan: plan })), []);
+  const choosePlan = useCallback((plan: PlanId) => {
+    telemetry.capture('paywall_plan_selected', { plan });
+    setPersisted((state) => ({ ...state, selectedPlan: plan }));
+  }, []);
 
   const purchasePlan = useCallback(async () => {
     if (!userId) return false;
     setIsBusy(true);
     setError(null);
+    telemetry.capture('purchase_started', { plan: persisted.selectedPlan, product_type: 'subscription' });
     try {
       await revenueCat.purchasePlan(userId, persisted.selectedPlan);
       await refreshAccount();
-      telemetry.capture('subscription_started', { plan: persisted.selectedPlan });
+      telemetry.capture('purchase_completed', { plan: persisted.selectedPlan, product_type: 'subscription' });
       return true;
     } catch (reason) {
       const message = errorMessage(reason, 'L’achat n’a pas pu être finalisé.');
       if (message) setError(message);
-      telemetry.error(reason, { operation: 'purchase_plan' });
+      if (isPurchaseCancelled(reason)) {
+        telemetry.capture('purchase_cancelled', { plan: persisted.selectedPlan, product_type: 'subscription' });
+      } else {
+        telemetry.capture('purchase_failed', { plan: persisted.selectedPlan, product_type: 'subscription', error_code: errorCode(reason) });
+        telemetry.error(reason, { operation: 'purchase_plan' });
+      }
       return false;
     } finally {
       setIsBusy(false);
@@ -317,24 +380,43 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     }
   }, [refreshAccount, userId]);
 
-  const purchaseTopUp = useCallback(async () => {
+  const purchaseTopUp = useCallback(async (quantity: TopUpQuantity) => {
     if (!userId) return false;
     setIsBusy(true);
     setError(null);
     try {
-      await revenueCat.purchaseTopUp(userId);
-      await refreshAccount();
-      telemetry.capture('topup_purchased', { quantity: 10 });
+      const previousBalance = usage.topUpRemaining;
+      telemetry.capture('purchase_started', { product_type: 'top_up', quantity });
+      await revenueCat.purchaseTopUp(userId, quantity);
+      let synchronizedUsage: Usage | null = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        await dealupApi.syncBilling();
+        synchronizedUsage = await dealupApi.getUsage();
+        setUsage(synchronizedUsage);
+        if (synchronizedUsage.topUpRemaining >= previousBalance + quantity) break;
+        await new Promise((resolve) => setTimeout(resolve, 650 * (attempt + 1)));
+      }
+      if (!synchronizedUsage || synchronizedUsage.topUpRemaining < previousBalance + quantity) {
+        setError('Ton achat est validé. Le solde est encore en cours de synchronisation. Réessaie dans un instant.');
+        telemetry.capture('topup_sync_pending', { quantity });
+        return false;
+      }
+      telemetry.capture('topup_purchased', { quantity });
       return true;
     } catch (reason) {
       const message = errorMessage(reason, 'Le pack n’a pas pu être ajouté.');
       if (message) setError(message);
-      telemetry.error(reason, { operation: 'purchase_topup' });
+      if (isPurchaseCancelled(reason)) {
+        telemetry.capture('purchase_cancelled', { product_type: 'top_up', quantity });
+      } else {
+        telemetry.capture('purchase_failed', { product_type: 'top_up', quantity, error_code: errorCode(reason) });
+        telemetry.error(reason, { operation: 'purchase_topup', quantity });
+      }
       return false;
     } finally {
       setIsBusy(false);
     }
-  }, [refreshAccount, userId]);
+  }, [usage.topUpRemaining, userId]);
 
   const setSellerContext = useCallback((contacted: boolean, reply = '', mediaUris: string[] = []) => {
     setAlreadyContacted(contacted);
@@ -358,7 +440,6 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
         sellerMediaUris: analysisSellerMediaUris,
       });
       setActiveAnalysisId(analysisId);
-      telemetry.capture('analysis_started', { purchase_mode: purchaseMode, has_seller_context: analysisAlreadyContacted });
       return analysisId;
     } catch (reason) {
       setError(errorMessage(reason, 'L’analyse n’a pas pu démarrer.'));
@@ -387,7 +468,6 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       const report = await dealupApi.getAnalysis(id);
       setReports((items) => ({ ...items, [report.id]: report }));
       await Promise.all([loadHistory(), refreshUsage()]);
-      telemetry.capture('analysis_completed', { score: report.verdict.dealScore, verdict: report.verdict.type });
       return report;
     } catch (reason) {
       telemetry.error(reason, { operation: 'complete_analysis' });
@@ -448,7 +528,10 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const clearError = useCallback(() => setError(null), []);
 
   const resetLocalDevelopmentState = useCallback(async () => {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    await Promise.all([
+      AsyncStorage.removeItem(STORAGE_KEY),
+      resetInAppReviewRequestForDevelopment(),
+    ]);
     setPersisted(initialPersisted);
     setIdentification(null);
     setPurchaseMode(null);

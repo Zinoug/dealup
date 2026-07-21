@@ -8,11 +8,12 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BrandButton } from '@/components/brand-button';
 import { Screen } from '@/components/screen';
 import { ScreenHeader } from '@/components/screen-header';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
 
 export default function SellerContextScreen() {
-  const { sellerReply, sellerMediaUris, setSellerContext, startAnalysis, hasSubscription, isBusy, usage } = useAppStore();
+  const { sellerReply, sellerMediaUris, setSellerContext, startAnalysis, hasSubscription, isBusy, usage, identification, purchaseMode } = useAppStore();
   const [reply, setReply] = useState(sellerReply);
   const [images, setImages] = useState(sellerMediaUris);
 
@@ -25,11 +26,17 @@ export default function SellerContextScreen() {
     const normalizedReply = includeSellerContext ? reply.trim() : '';
     const normalizedImages = includeSellerContext ? images : [];
     setSellerContext(includeSellerContext, normalizedReply, normalizedImages);
+    telemetry.capture('analysis_form_completed', {
+      purchase_mode: purchaseMode,
+      has_seller_context: includeSellerContext,
+      seller_media_count: normalizedImages.length,
+      device_category: identification?.compatibility?.device?.category ?? null,
+    });
     if (!hasSubscription) {
       router.push({ pathname: '/paywall', params: { intent: 'analysis' } });
       return;
     }
-    if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
+    if (usage.includedRemaining <= 0 && usage.topUpRemaining <= 0) {
       router.replace('/quota');
       return;
     }

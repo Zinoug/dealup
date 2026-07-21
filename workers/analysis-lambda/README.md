@@ -14,7 +14,6 @@ Worker idempotent qui transforme une annonce Leboncoin privée en rapport DealUp
 8. calcule localement score, plafonds, verdict, prix, action, checklist et template ;
 9. stocke séparément le candidat Gemini compact et le rapport public ;
 10. recrédite l’unité en cas d’échec terminal.
-11. envoie au mieux une notification Expo Push de fin ou d’échec aux appareils enregistrés ; une panne de notification ne modifie jamais le résultat de l’analyse.
 
 Le prompt, l’exemple JSON de réponse et les règles sont embarqués dans le worker :
 
@@ -49,6 +48,10 @@ python run_local.py --response-example
 Le terminal affiche l’identifiant d’analyse, l’étape, la durée, le modèle, la taille du prompt, le nombre d’images et le code d’erreur. Il n’affiche jamais le payload Leboncoin, les messages vendeur, les URLs signées, le prompt complet ou la réponse Gemini brute.
 
 Point d’entrée AWS Lambda : `handler.handler`.
+
+L'image de production est construite avec le `Dockerfile` Lambda puis publiée
+dans ECR. Ne jamais envoyer le `.venv` macOS dans Lambda. Le runbook complet est
+dans [`../../docs/operations/production.md`](../../docs/operations/production.md).
 
 Les secrets de production peuvent être chargés depuis AWS Secrets Manager avec `DEALUP_SECRET_ARN`. Voir [`../../docs/operations/configuration.md`](../../docs/operations/configuration.md).
 

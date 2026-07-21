@@ -1,10 +1,10 @@
-import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Copy } from 'lucide-react-native';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, GlassCard, LimeButton } from '@/components/reference-ui';
+import { CopyMessageButton } from '@/components/copy-message-button';
 import { useAnalysisReport } from '@/hooks/use-analysis-report';
+import { telemetry } from '@/services/telemetry';
 import { colors, layout } from '@/theme/tokens';
 import { formatEuros } from '@/utils/format';
 
@@ -49,10 +49,14 @@ export default function MakeOfferScreen() {
         <GlassCard style={styles.messageCard}>
           <Text style={styles.messageTitle}>Message d’offre prêt à envoyer</Text>
           <Text style={styles.messageText}>{report.messages.makeOffer}</Text>
-          <LimeButton
-            label="Copier le message"
-            icon={<Copy size={16} color={colors.brand900} />}
-            onPress={() => void Clipboard.setStringAsync(report.messages.makeOffer)}
+          <CopyMessageButton
+            message={report.messages.makeOffer}
+            onCopied={() => {
+              telemetry.capture('seller_message_copied', { analysis_id: report.id, message_type: 'make_offer', surface: 'make_offer' });
+              if (report.primaryAction.type === 'MAKE_OFFER') {
+                telemetry.capture('recommended_action_used', { analysis_id: report.id, action_type: report.primaryAction.type, surface: 'make_offer' });
+              }
+            }}
             style={styles.copy}
           />
         </GlassCard>

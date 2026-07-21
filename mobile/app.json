@@ -15,7 +15,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "DealUp utilise les images choisies uniquement pour analyser les réponses et preuves du vendeur."
-      }
+      },
+      "appleTeamId": "LDFMQK84BN"
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +25,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.joindealup.app"
     },
     "web": {
       "output": "static",
@@ -39,6 +41,7 @@
         }
       ],
       "expo-image",
+      "./plugins/with-dealup-action-extension",
       [
         "expo-sharing",
         {
@@ -62,7 +65,8 @@
           "color": "#C4F52A"
         }
       ],
-      "@sentry/react-native/expo"
+      "@sentry/react-native/expo",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true

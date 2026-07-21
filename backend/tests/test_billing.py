@@ -1,15 +1,7 @@
 from app.db.session import session_factory
-from datetime import datetime, timedelta, timezone
-
-from app.models import (
-    Subscription,
-    SubscriptionPlan,
-    SubscriptionStatus,
-    UsageEvent,
-    UsageEventKind,
-    User,
-)
 from app.api.dependencies import revenuecat_dependency
+from app.core.config import get_settings
+from app.models import UsageEvent, UsageEventKind
 
 
 class FakeRevenueCat:
@@ -18,20 +10,37 @@ class FakeRevenueCat:
             "subscriber": {
                 "entitlements": {},
                 "non_subscriptions": {
-                    "dealup_analysis_topup_10": [
+                    get_settings().revenuecat_topup_15_product_id: [
                         {
                             "id": "store-transaction-1",
                             "purchase_date": "2026-07-17T12:00:00Z",
                         }
-                    ]
+                    ],
+                    get_settings().revenuecat_topup_40_product_id: [
+                        {
+                            "id": "store-transaction-40",
+                            "purchase_date": "2026-07-17T13:00:00Z",
+                        }
+                    ],
                 },
             }
         }
 
 
-class UnexpectedRevenueCat:
+class FakeActiveWeeklyRevenueCat:
     def get_subscriber(self, app_user_id: str) -> dict:
-        raise AssertionError("RevenueCat must not override internal non-production access")
+        return {
+            "subscriber": {
+                "entitlements": {
+                    get_settings().revenuecat_entitlement_id: {
+                        "product_identifier": get_settings().revenuecat_weekly_product_id,
+                        "purchase_date": "2026-07-20T12:00:00Z",
+                        "expires_date": "2099-07-27T12:00:00Z",
+                    }
+                },
+                "non_subscriptions": {},
+            }
+        }
 
 
 def test_revenuecat_topup_webhook_is_idempotent(client) -> None:
@@ -42,7 +51,7 @@ def test_revenuecat_topup_webhook_is_idempotent(client) -> None:
             "id": "event-topup-1",
             "type": "NON_RENEWING_PURCHASE",
             "app_user_id": "user_local_dealup",
-            "product_id": "dealup_analysis_topup_10",
+            "product_id": get_settings().revenuecat_topup_15_product_id,
             "event_timestamp_ms": 1,
         },
     }
@@ -55,7 +64,7 @@ def test_revenuecat_topup_webhook_is_idempotent(client) -> None:
             session.query(UsageEvent).filter_by(kind=UsageEventKind.TOPUP_CREDIT).all()
         )
         assert len(credits) == 1
-        assert credits[0].amount == 10
+        assert credits[0].amount == 15
 
 
 def test_revenuecat_sync_reconciles_topup_once(client) -> None:
@@ -75,39 +84,37 @@ def test_revenuecat_sync_reconciles_topup_once(client) -> None:
                 .all()
             )
             assert len(credits) == 1
-            assert credits[0].amount == 10
+            assert credits[0].amount == 15
+            large_pack = (
+                session.query(UsageEvent)
+                .filter_by(source_event_id="revenuecat-transaction:store-transaction-40")
+                .one()
+            )
+            assert large_pack.amount == 40
     finally:
         app.dependency_overrides.clear()
 
 
-def test_manual_non_production_access_survives_billing_sync(client) -> None:
+def test_revenuecat_sync_grants_current_subscription_period_once(client) -> None:
     from app.main import app
 
-    client.get("/v1/me")
-    with session_factory()() as session:
-        user = session.query(User).filter_by(clerk_user_id="user_local_dealup").one()
-        session.add(
-            Subscription(
-                user_id=user.id,
-                plan=SubscriptionPlan.MONTHLY,
-                status=SubscriptionStatus.ACTIVE,
-                product_id="manual_monthly",
-                current_period_started_at=datetime.now(timezone.utc),
-                current_period_ends_at=datetime.now(timezone.utc) + timedelta(days=30),
-                will_renew=False,
-                environment="manual",
-            )
-        )
-        session.commit()
-
-    app.dependency_overrides[revenuecat_dependency] = lambda: UnexpectedRevenueCat()
+    app.dependency_overrides[revenuecat_dependency] = lambda: FakeActiveWeeklyRevenueCat()
     try:
-        response = client.post("/v1/billing/sync")
-        assert response.status_code == 200, response.text
-        assert response.json() == {
-            "synced": True,
-            "plan": "monthly",
-            "entitlement": "active",
-        }
+        client.get("/v1/me")
+        first = client.post("/v1/billing/sync")
+        second = client.post("/v1/billing/sync")
+        assert first.status_code == 200, first.text
+        assert second.status_code == 200, second.text
+        usage = client.get("/v1/me/usage")
+        assert usage.status_code == 200, usage.text
+        assert usage.json()["included"]["remaining"] == 15
+        with session_factory()() as session:
+            credits = (
+                session.query(UsageEvent)
+                .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+                .all()
+            )
+            assert len(credits) == 1
+            assert credits[0].amount == 15
     finally:
         app.dependency_overrides.clear()

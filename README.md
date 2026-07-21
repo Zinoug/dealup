@@ -18,7 +18,7 @@ Le produit et les décisions business sont décrits dans [docs/product/product.m
 - hard paywall sans essai ni analyse complète gratuite ;
 - Weekly à 4,99 € pour 15 annonces ;
 - Monthly à 12,99 € pour 60 annonces ;
-- top-up de 10 analyses à 4,99 € ;
+- recharges de 15 analyses à 4,99 € et de 40 analyses à 9,99 € ;
 - réanalyses vendeur incluses pour une annonce débloquée ;
 - landing `joindealup.com` limitée à la présentation et au renvoi vers l’App Store.
 
@@ -142,4 +142,4 @@ L’identification Piloterr est privée au parcours utilisateur. DealUp ne parta
 | Extraction Leboncoin | Piloterr |
 | Analyse multimodale et recherche web | Gemini |
 
-Les fichiers `.env.example` documentent les variables attendues. Aucun secret ne doit être ajouté au dépôt. La procédure complète Clerk, RevenueCat, PostgreSQL, S3, Lambda, PostHog, Sentry et EAS est dans [docs/operations/configuration.md](docs/operations/configuration.md).
+Les fichiers `.env.example` documentent les variables attendues. Aucun secret ne doit être ajouté au dépôt. Voir le [guide de configuration](docs/operations/configuration.md) et le [runbook de production Railway + AWS + EAS](docs/operations/production.md).

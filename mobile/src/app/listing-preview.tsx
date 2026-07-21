@@ -1,15 +1,31 @@
 import { router } from 'expo-router';
 import { CheckSquare2, ShieldQuestion, Tag } from 'lucide-react-native';
+import { useEffect } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, GlassCard, LimeButton } from '@/components/reference-ui';
 import { ListingImageGallery } from '@/components/listing-image-gallery';
+import { requestInAppReviewForMilestone } from '@/services/app-review';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, type } from '@/theme/tokens';
 import { formatEuros } from '@/utils/format';
 
 export default function ListingPreviewScreen() {
   const { identification } = useAppStore();
+  const identificationId = identification?.identificationId;
+  const supported = identification?.compatibility?.status === 'SUPPORTED';
+
+  useEffect(() => {
+    if (!identificationId || !supported) return;
+    const timeout = setTimeout(() => {
+      void requestInAppReviewForMilestone('first_identification').then((result) => {
+        telemetry.capture('app_review_prompt_finished', { result, source: 'first_identification' });
+      });
+    }, 1_000);
+    return () => clearTimeout(timeout);
+  }, [identificationId, supported]);
+
   if (!identification) return null;
   const device = identification.compatibility?.device;
   const details = [...identification.facts, ...Object.values(device?.specs ?? {}).map(String), `${identification.photoCount} photos`]
@@ -34,7 +50,10 @@ export default function ListingPreviewScreen() {
           </View>
         </GlassCard>
 
-        <View style={styles.cta}><LimeButton label="Analyser cette annonce" onPress={() => router.push('/analysis-setup')} /></View>
+        <View style={styles.cta}><LimeButton label="Analyser cette annonce" onPress={() => {
+          telemetry.capture('analysis_form_started', { device_category: device?.category ?? null });
+          router.push('/analysis-setup');
+        }} /></View>
       </ScrollView>
     </DarkSafeScreen>
   );

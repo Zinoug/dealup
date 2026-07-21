@@ -26,11 +26,20 @@ export const telemetry = {
     posthog?.identify(userId, properties);
     Sentry.setUser({ id: userId });
   },
+  setPersonProperties(properties: Properties) {
+    posthog?.setPersonProperties(properties);
+  },
   clearPersonProperties() {
     posthog?.unsetPersonProperties([
       'email',
       'auth_provider',
       'plan',
+      'subscription_active',
+      'quota_limit',
+      'quota_used',
+      'quota_remaining',
+      'topup_remaining',
+      'onboarding_completed',
       'account_created_at',
     ]);
   },

@@ -12,7 +12,6 @@ class FakeRepository:
         self.completed = None
         self.failed = None
         self.media = []
-        self.tokens = ["ExpoPushToken[test]"]
 
     def reserve(self, analysis_id):
         return self.job
@@ -23,9 +22,6 @@ class FakeRepository:
     def fail(self, *args):
         self.failed = args
 
-    def push_tokens(self, user_id):
-        return self.tokens
-
     def record_listing_media(self, **kwargs):
         self.media.append(kwargs)
 
@@ -33,14 +29,6 @@ class FakeRepository:
 class FakeAnalytics:
     def capture(self, *args, **kwargs):
         pass
-
-
-class FakeNotifier:
-    def __init__(self) -> None:
-        self.calls = []
-
-    def send(self, tokens, **kwargs):
-        self.calls.append((tokens, kwargs))
 
 
 class FakeStorage:
@@ -115,7 +103,6 @@ def test_successful_analysis_uses_one_gemini_call_and_persists_both_results() ->
     )
     repository = FakeRepository(job)
     gemini = FakeGemini()
-    notifier = FakeNotifier()
     processor = AnalysisProcessor(
         settings=settings(),
         repository=repository,
@@ -123,7 +110,6 @@ def test_successful_analysis_uses_one_gemini_call_and_persists_both_results() ->
         gemini=gemini,
         storage=FakeStorage(),
         analytics=FakeAnalytics(),
-        notifier=notifier,
     )
 
     assert processor.process("analysis-1")["status"] == "completed"
@@ -135,11 +121,6 @@ def test_successful_analysis_uses_one_gemini_call_and_persists_both_results() ->
     assert report["template_id"] == "NEGOTIATE"
     assert "prompt_version" not in gemini.last_kwargs
     assert repository.failed is None
-    assert notifier.calls[0][0] == ["ExpoPushToken[test]"]
-    assert notifier.calls[0][1]["data"] == {
-        "analysis_id": "analysis-1",
-        "status": "completed",
-    }
 
 
 def test_gemini_connection_failure_keeps_specific_code() -> None:
@@ -169,7 +150,6 @@ def test_gemini_connection_failure_keeps_specific_code() -> None:
         engine_revision="test-engine",
     )
     repository = FakeRepository(job)
-    notifier = FakeNotifier()
     processor = AnalysisProcessor(
         settings=settings(),
         repository=repository,
@@ -177,7 +157,6 @@ def test_gemini_connection_failure_keeps_specific_code() -> None:
         gemini=FailingGemini(),
         storage=FakeStorage(),
         analytics=FakeAnalytics(),
-        notifier=notifier,
     )
 
     result = processor.process("analysis-1")
@@ -195,4 +174,3 @@ def test_gemini_connection_failure_keeps_specific_code() -> None:
         "stage": "gemini",
     }
     assert failure_metadata["gemini_duration_ms"] >= 0
-    assert notifier.calls[0][1]["data"]["status"] == "failed"

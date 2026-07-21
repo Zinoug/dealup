@@ -19,6 +19,7 @@ import Animated, {
 import { AppLogo } from '@/components/app-logo';
 import { DeviceThumbnail } from '@/components/device-thumbnail';
 import { DarkSafeScreen } from '@/components/reference-ui';
+import { runtime } from '@/services/runtime';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, type } from '@/theme/tokens';
 
@@ -40,7 +41,7 @@ type InspectionMedia = {
 };
 
 export default function ProgressScreen() {
-  const { id, replay } = useLocalSearchParams<{ id: string; replay?: string }>();
+  const { id, replay, parent } = useLocalSearchParams<{ id: string; replay?: string; parent?: string }>();
   const { completeAnalysis, retryAnalysis, identification, sellerMediaUris, reports, loadReplayMedia } = useAppStore();
   const [step, setStep] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
@@ -49,7 +50,9 @@ export default function ProgressScreen() {
   const [replayMedia, setReplayMedia] = useState<{ listing: string[]; seller: string[] }>({ listing: [], seller: [] });
   const { height } = useWindowDimensions();
   const compact = height < 800;
-  const replayReport = replay === '1' && id ? reports[id] : undefined;
+  const replayEnabled = runtime.devTools && replay === '1';
+  const isReanalysis = Boolean(parent);
+  const replayReport = replayEnabled && id ? reports[id] : undefined;
   const listing = replayReport?.listing ?? identification;
   const device = replayReport?.device ?? identification?.compatibility?.device;
   const inspectionMedia = useMemo<InspectionMedia[]>(() => {
@@ -67,9 +70,9 @@ export default function ProgressScreen() {
   }, [identification?.previewPhotoUrls, listing?.thumbnailUrl, replayMedia.listing, replayMedia.seller, replayReport, sellerMediaUris]);
 
   useEffect(() => {
-    if (replay !== '1' || !id) return;
+    if (!replayEnabled || !id) return;
     void loadReplayMedia(id).then(setReplayMedia);
-  }, [id, loadReplayMedia, replay]);
+  }, [id, loadReplayMedia, replayEnabled]);
 
   useEffect(() => {
     if (failure) return;
@@ -77,13 +80,13 @@ export default function ProgressScreen() {
       setTimeout(() => setStep((value) => Math.max(value, index + 1)), delay),
     );
     return () => timers.forEach(clearTimeout);
-  }, [failure, replay, run]);
+  }, [failure, replayEnabled, run]);
 
   useEffect(() => {
     if (!id) return;
     let alive = true;
     let revealTimer: ReturnType<typeof setTimeout> | undefined;
-    if (replay === '1') {
+    if (replayEnabled) {
       revealTimer = setTimeout(() => {
         if (!alive) return;
         setStep(4);
@@ -99,19 +102,25 @@ export default function ProgressScreen() {
       if (result && alive) {
         setStep(4);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        revealTimer = setTimeout(() => router.replace({ pathname: '/analysis/[id]', params: { id: result.id, reveal: '1' } }), 720);
+        revealTimer = setTimeout(() => router.replace({
+          pathname: '/analysis/[id]',
+          params: {
+            id: result.id,
+            reveal: '1',
+            ...(!isReanalysis ? { review: 'first_premium_analysis' } : {}),
+          },
+        }), 720);
       }
-    }).catch((reason: unknown) => {
+    }).catch(() => {
       if (!alive) return;
-      const message = reason instanceof Error ? reason.message : 'Une erreur a interrompu l’analyse.';
-      setFailure(message);
+      setFailure('failed');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     });
     return () => {
       alive = false;
       if (revealTimer) clearTimeout(revealTimer);
     };
-  }, [completeAnalysis, id, replay, run]);
+  }, [completeAnalysis, id, isReanalysis, replayEnabled, run]);
 
   const retry = async () => {
     if (!id || retrying) return;
@@ -166,9 +175,8 @@ export default function ProgressScreen() {
         <View style={styles.failureBackdrop}>
           <View style={styles.failureModal}>
             <View style={styles.failureIcon}><AlertTriangle color="#FFB24A" size={29} strokeWidth={2.2} /></View>
-            <Text style={styles.failureTitle}>L’analyse s’est interrompue</Text>
-            <Text style={styles.failureMessage}>{failure ?? 'Une erreur inattendue est survenue.'}</Text>
-            <Text style={styles.failureReassurance}>Ton quota a été recrédité automatiquement. Tu peux relancer la même analyse sans utiliser une nouvelle unité.</Text>
+            <Text style={styles.failureTitle}>Une erreur est survenue</Text>
+            <Text style={styles.failureMessage}>{isReanalysis ? 'La réanalyse n’a pas pu se terminer.' : 'L’analyse n’a pas pu se terminer.'}{`\n`}Tu peux réessayer.</Text>
             <Pressable disabled={retrying} onPress={() => void retry()} style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed, retrying && styles.buttonDisabled]}>
               <RefreshCw color={colors.brand900} size={19} />
               <Text style={styles.retryLabel}>{retrying ? 'Relance…' : 'Réessayer'}</Text>
@@ -313,7 +321,6 @@ const styles = StyleSheet.create({
   failureIcon: { width: 58, height: 58, borderRadius: 29, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,151,43,.12)', borderWidth: 1, borderColor: 'rgba(255,178,74,.34)' },
   failureTitle: { color: colors.white, fontSize: 23, lineHeight: 29, fontWeight: '700', letterSpacing: -.45, textAlign: 'center', marginTop: 17 },
   failureMessage: { color: '#D7E2DC', fontSize: 15, lineHeight: 21, textAlign: 'center', marginTop: 9 },
-  failureReassurance: { color: '#91A89D', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 13 },
   retryButton: { minHeight: 55, borderRadius: 18, marginTop: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, backgroundColor: colors.lime },
   retryLabel: { color: colors.brand900, fontSize: 16, fontWeight: '700' },
   homeButton: { minHeight: 50, borderRadius: 17, marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderWidth: 1, borderColor: 'rgba(132,180,158,.28)', backgroundColor: 'rgba(4,52,40,.70)' },

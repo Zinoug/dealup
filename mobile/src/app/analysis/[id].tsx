@@ -1,4 +1,3 @@
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
@@ -8,7 +7,6 @@ import {
   BadgeCheck,
   ChartNoAxesCombined,
   CheckCircle2,
-  Copy,
   FileCheck2,
   ListChecks,
   MessageSquareText,
@@ -36,10 +34,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DarkBackground, GlassCard, LimeButton } from '@/components/reference-ui';
+import { CopyMessageButton } from '@/components/copy-message-button';
 import { DeviceThumbnail } from '@/components/device-thumbnail';
 import { ScoreGauge } from '@/components/score-gauge';
 import { useAnalysisReport } from '@/hooks/use-analysis-report';
+import { requestInAppReviewForMilestone } from '@/services/app-review';
 import { runtime } from '@/services/runtime';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, type } from '@/theme/tokens';
 import type { AnalysisResult, ReportTemplate } from '@/types/domain';
@@ -79,7 +80,7 @@ const SECTION_ICON: Record<SectionKey, LucideIcon> = {
 };
 
 export default function AnalysisReportScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, review } = useLocalSearchParams<{ id: string; review?: string }>();
   const { reports } = useAppStore();
   const { report, loading } = useAnalysisReport(id);
   const scrollRef = useRef<ScrollView>(null);
@@ -94,10 +95,21 @@ export default function AnalysisReportScreen() {
     : baseOrder;
   const [activeSection, setActiveSection] = useState<SectionKey>(navigationItems[0]);
   const activeSectionRef = useRef<SectionKey>(navigationItems[0]);
+  const openedReportRef = useRef<string | null>(null);
   const visibleActiveSection = navigationItems.includes(activeSection) ? activeSection : navigationItems[0];
 
   useEffect(() => {
     if (!report) return;
+    if (openedReportRef.current !== report.id) {
+      openedReportRef.current = report.id;
+      telemetry.capture('report_opened', {
+        analysis_id: report.id,
+        device_category: report.device.category,
+        verdict: report.verdict.type,
+        deal_score: report.verdict.dealScore,
+        template_id: report.templateId,
+      });
+    }
     void AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
       if (reduced) return;
       const feedback = report.templateId === 'PASS'
@@ -108,6 +120,16 @@ export default function AnalysisReportScreen() {
       void Haptics.notificationAsync(feedback);
     });
   }, [report]);
+
+  useEffect(() => {
+    if (!report || review !== 'first_premium_analysis') return;
+    const timeout = setTimeout(() => {
+      void requestInAppReviewForMilestone('first_premium_analysis').then((result) => {
+        telemetry.capture('app_review_prompt_finished', { result, source: 'first_premium_analysis' });
+      });
+    }, 1_000);
+    return () => clearTimeout(timeout);
+  }, [report, review]);
 
   if (loading || !report) {
     return <DarkBackground variant="focus"><SafeAreaView style={styles.loading}><ActivityIndicator color={colors.lime} /><Text style={styles.loadingText}>Chargement du rapport…</Text></SafeAreaView></DarkBackground>;
@@ -344,12 +366,20 @@ function RisksSection({ report }: { report: AnalysisResult }) {
 
 function PrimarySection({ report }: { report: AnalysisResult }) {
   const compare = report.templateId === 'PASS';
+  const usePrimaryAction = () => {
+    if (compare) {
+      telemetry.capture('recommended_action_used', { analysis_id: report.id, action_type: report.primaryAction.type, surface: 'report' });
+      router.replace('/(tabs)');
+      return;
+    }
+    router.push({ pathname: '/report-actions', params: { id: report.id } });
+  };
   return (
     <>
       <SectionTitle eyebrow="Prochaine étape" title="L’action la plus utile maintenant" />
       <GlassCard style={styles.cardPad}>
         <View style={styles.primaryTop}><View style={styles.primaryIcon}>{compare ? <ShieldAlert size={23} color={colors.red} /> : <ShieldCheck size={23} color={colors.lime} />}</View><View style={styles.primaryCopy}><Text style={styles.primaryTitle}>{report.primaryAction.label}</Text><Text style={styles.primaryBody}>{report.primaryAction.reason}</Text></View></View>
-        <LimeButton label={compare ? 'Analyser une autre annonce' : report.primaryAction.label} onPress={() => compare ? router.replace('/(tabs)') : router.push({ pathname: '/report-actions', params: { id: report.id } })} style={styles.sectionButton} />
+        <LimeButton label={compare ? 'Analyser une autre annonce' : report.primaryAction.label} onPress={usePrimaryAction} style={styles.sectionButton} />
       </GlassCard>
     </>
   );
@@ -357,10 +387,16 @@ function PrimarySection({ report }: { report: AnalysisResult }) {
 
 function MessageSection({ report }: { report: AnalysisResult }) {
   const message = report.templateId === 'NEGOTIATE' ? report.messages.makeOffer : report.messages.requestProofs;
+  const messageType = report.templateId === 'NEGOTIATE' ? 'make_offer' : 'request_proofs';
   return (
     <>
       <SectionTitle eyebrow="Message au vendeur" title="Prêt à envoyer" />
-      <GlassCard style={styles.cardPad}><Text style={styles.message}>{message}</Text><Pressable onPress={() => void Clipboard.setStringAsync(message)} style={styles.copyButton}><Copy size={17} color={colors.brand900} /><Text style={styles.copyText}>Copier le message</Text></Pressable></GlassCard>
+      <GlassCard style={styles.cardPad}><Text style={styles.message}>{message}</Text><CopyMessageButton message={message} onCopied={() => {
+        telemetry.capture('seller_message_copied', { analysis_id: report.id, message_type: messageType, surface: 'report' });
+        if (report.primaryAction.type === 'REQUEST_PROOFS') {
+          telemetry.capture('recommended_action_used', { analysis_id: report.id, action_type: report.primaryAction.type, surface: 'report_message' });
+        }
+      }} style={styles.copyButton} /></GlassCard>
     </>
   );
 }
@@ -370,7 +406,12 @@ function ChecklistSection({ report }: { report: AnalysisResult }) {
   return (
     <>
       <SectionTitle eyebrow="Checklist" title={report.device.category === 'MACBOOK' ? 'Les contrôles essentiels du Mac' : 'Les contrôles essentiels de l’iPhone'} />
-      <GlassCard style={styles.cardPad}>{preview.map((item) => <View key={item.code} style={styles.checkRow}><ListChecks size={17} color={item.critical ? colors.lime : colors.inkMuted} /><Text style={styles.signalText}>{item.label}</Text></View>)}<LimeButton label="Ouvrir la checklist complète" onPress={() => router.push({ pathname: '/checklist', params: { id: report.id } })} style={styles.sectionButton} /></GlassCard>
+      <GlassCard style={styles.cardPad}>{preview.map((item) => <View key={item.code} style={styles.checkRow}><ListChecks size={17} color={item.critical ? colors.lime : colors.inkMuted} /><Text style={styles.signalText}>{item.label}</Text></View>)}<LimeButton label="Ouvrir la checklist complète" onPress={() => {
+        if (report.primaryAction.type === 'START_CHECKLIST') {
+          telemetry.capture('recommended_action_used', { analysis_id: report.id, action_type: report.primaryAction.type, surface: 'report_checklist' });
+        }
+        router.push({ pathname: '/checklist', params: { id: report.id } });
+      }} style={styles.sectionButton} /></GlassCard>
     </>
   );
 }
@@ -399,7 +440,7 @@ const styles = StyleSheet.create({
   proofList: { gap: 9 }, proofCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, proofNumber: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' }, proofNumberText: { color: colors.brand900, fontWeight: '800' }, proofCopy: { flex: 1 }, proofTitle: { color: colors.white, fontSize: 13, fontWeight: '700' }, proofReason: { color: colors.inkMuted, fontSize: 11, lineHeight: 17, marginTop: 4 }, proofQuestion: { color: '#C3E86A', fontSize: 11, lineHeight: 17, marginTop: 7 },
   riskCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 }, riskIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.amberSoft, alignItems: 'center', justifyContent: 'center' }, riskIconCritical: { backgroundColor: colors.redSoft }, riskCopy: { flex: 1 }, riskTitle: { color: colors.white, fontSize: 14, fontWeight: '700' }, riskBody: { color: colors.inkMuted, fontSize: 11, lineHeight: 17, marginTop: 5 }, riskCheck: { color: colors.lime, fontSize: 10, lineHeight: 15, marginTop: 8 },
   primaryTop: { flexDirection: 'row', gap: 12 }, primaryIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(196,245,42,.10)', alignItems: 'center', justifyContent: 'center' }, primaryCopy: { flex: 1 }, primaryTitle: { color: colors.white, fontSize: 15, fontWeight: '700' }, primaryBody: { color: colors.inkMuted, fontSize: 12, lineHeight: 18, marginTop: 5 }, sectionButton: { marginTop: 16, minHeight: 48 },
-  message: { color: colors.white, fontSize: 12, lineHeight: 18 }, copyButton: { height: 46, borderRadius: 12, backgroundColor: colors.lime, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 15 }, copyText: { color: colors.brand900, fontSize: 13, fontWeight: '700' }, checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 11 }, expertText: { color: colors.white, fontSize: 13, lineHeight: 20, marginBottom: 15 },
+  message: { color: colors.white, fontSize: 12, lineHeight: 18 }, copyButton: { minHeight: 46, marginTop: 15 }, checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 11 }, expertText: { color: colors.white, fontSize: 13, lineHeight: 20, marginBottom: 15 },
   sellerReply: { minHeight: 74, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.darkCard, borderRadius: 16, marginTop: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 11 }, replyIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(196,245,42,.10)', alignItems: 'center', justifyContent: 'center' }, replyCopy: { flex: 1 }, replyTitle: { color: colors.white, fontSize: 13, fontWeight: '700' }, replyBody: { color: colors.inkMuted, fontSize: 10, marginTop: 3 },
   privateNote: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 28 }, privateText: { color: colors.inkSoft, fontSize: 10 },
 });

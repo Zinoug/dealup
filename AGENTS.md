@@ -22,7 +22,7 @@ Keep the monorepo simple: `mobile/`, `landing/`, `backend/`, `workers/`, and `do
 - Hard paywall with no free trial and no complete free analysis.
 - Weekly: 4.99 EUR, 15 new analyses per week.
 - Monthly: 12.99 EUR, 60 new analyses per month.
-- Top-up: 10 analyses for 4.99 EUR, reserved for active subscribers.
+- Top-ups: 15 analyses for 4.99 EUR or 40 analyses for 9.99 EUR, reserved for active subscribers.
 - Seller-context reanalysis is free for an already unlocked analysis.
 - An explicit listing refresh consumes a new unit.
 - RevenueCat is the billing authority. Never trust entitlement data from mobile.
@@ -120,7 +120,7 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 ## Mobile and Landing
 
-Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → compatibility → private Piloterr teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → reanalysis/history/profile.
+Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif du rappel local quotidien → URL/share → compatibility → private Piloterr teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → reanalysis/history/profile.
 
 The report is one scrollable screen with four deterministic section orders (`BUY`, `NEGOTIATE`, `VERIFY_FIRST`, `PASS`) and category-specific checklist content.
 
@@ -143,6 +143,18 @@ Do not call paid APIs in automated tests.
 - Browser-based UI review and visual verification belong to the founder.
 - For landing changes, stop after non-browser checks such as lint, typecheck, static build, generated-file inspection, and automated tests.
 - Do not start a development server solely for visual inspection unless the founder explicitly asks for it.
+
+## Founder-Owned Native Runtime
+
+- Never run `expo run:ios`, `expo run:android`, `expo start`, Metro, Xcode builds,
+  simulators, physical-device installs, CocoaPods commands, or any equivalent
+  native runtime/build command unless the founder explicitly authorizes that
+  exact action in the current message.
+- Mobile verification by agents stops at non-runtime checks such as lint,
+  TypeScript, configuration inspection, and static tests unless explicit
+  authorization is given.
+- Never leave an agent-started Metro, Expo, Xcode, simulator, or native build
+  process running after a task.
 
 ## Git and Safety
 

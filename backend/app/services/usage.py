@@ -93,12 +93,12 @@ class UsageService:
             active = False
         limit = PLAN_LIMITS.get(subscription.plan, 0)
         used = self.repo.included_used(user.id, start, end) if start and end else 0
-        remaining = max(0, limit - used) if active else 0
+        remaining = self.repo.included_balance(user.id) if active else 0
         upsells: list[str] = []
-        if active and remaining == 0:
+        if active and remaining == 0 and topup == 0:
             if subscription.plan == SubscriptionPlan.WEEKLY:
                 upsells.append("upgrade_monthly")
-            upsells.append("top_up_10")
+            upsells.extend(["top_up_15", "top_up_40"])
         return UsageResponse(
             plan=subscription.plan.value,
             entitlement="active" if active else "inactive",
@@ -112,9 +112,7 @@ class UsageService:
     def reserve(self, user: User, analysis_id: str) -> QuotaReservation:
         subscription = self._active_subscription(user.id, lock=True)
         start, end = self._period(subscription)
-        limit = PLAN_LIMITS[subscription.plan]
-        used = self.repo.included_used(user.id, start, end)
-        if used < limit:
+        if self.repo.included_balance(user.id) > 0:
             event = self.repo.add_event(
                 UsageEvent(
                     user_id=user.id,
@@ -136,7 +134,7 @@ class UsageService:
                 )
             )
             return QuotaReservation("top_up", event)
-        upsells = ["top_up_10"]
+        upsells = ["top_up_15", "top_up_40"]
         if subscription.plan == SubscriptionPlan.WEEKLY:
             upsells.insert(0, "upgrade_monthly")
         raise DealUpError(

@@ -74,6 +74,7 @@ class SubscriptionStatus(str, enum.Enum):
 
 
 class UsageEventKind(str, enum.Enum):
+    INCLUDED_CREDIT = "included_credit"
     INCLUDED_DEBIT = "included_debit"
     TOPUP_CREDIT = "topup_credit"
     TOPUP_DEBIT = "topup_debit"

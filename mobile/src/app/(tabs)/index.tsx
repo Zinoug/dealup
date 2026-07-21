@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { AlertCircle, ArrowRight, ChevronRight, Clock3, Link2, Share2, Smartphone, X } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 
@@ -11,6 +11,7 @@ import { BrandBackground } from '@/components/brand-background';
 import { DeviceThumbnail } from '@/components/device-thumbnail';
 import { LeboncoinShareGuide } from '@/components/leboncoin-share-guide';
 import { BrandLockup } from '@/components/reference-ui';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, shadows, spacing, type } from '@/theme/tokens';
 import { formatEuros, isLeboncoinUrl } from '@/utils/format';
@@ -23,6 +24,8 @@ const verdictCopy = {
 } as const;
 
 export default function HomeScreen() {
+  const { width, fontScale } = useWindowDimensions();
+  const compactDevice = width <= 390 || fontScale > 1.05;
   const scrollRef = useRef<ScrollView>(null);
   const [url, setUrl] = useState('');
   const [validating, setValidating] = useState(false);
@@ -39,8 +42,13 @@ export default function HomeScreen() {
 
   const submit = async () => {
     setValidating(true);
-    if (!isLeboncoinUrl(url)) { setToast('Colle un lien Leboncoin valide'); setValidating(false); return; }
-    const listing = await identifyListing(url);
+    if (!isLeboncoinUrl(url)) {
+      telemetry.capture('listing_identification_failed', { source: 'manual', error_code: 'INVALID_URL' });
+      setToast('Colle un lien Leboncoin valide');
+      setValidating(false);
+      return;
+    }
+    const listing = await identifyListing(url, 'manual');
     setValidating(false);
     if (listing?.compatibility?.status === 'SUPPORTED') router.push('/listing-preview');
     else if (listing) router.push({ pathname: '/compatible-devices', params: { status: listing.compatibility?.status ?? 'UNKNOWN' } });
@@ -66,25 +74,25 @@ export default function HomeScreen() {
           if (event.nativeEvent.contentOffset.y < 0) scrollRef.current?.scrollTo({ y: 0, animated: false });
         }}
       >
-        <View style={styles.hero}>
+        <View style={[styles.hero, compactDevice && styles.heroCompact]}>
           <View style={styles.heroSurface}>
             <Image source={require('../../../assets/hero/home-tag-background.png')} contentFit="cover" contentPosition="top center" style={styles.heroImage} />
             <View style={styles.heroShade} />
           </View>
           <SafeAreaView edges={['top']}>
-            <View style={styles.heroInner}>
+            <View style={[styles.heroInner, compactDevice && styles.heroInnerCompact]}>
               <BrandLockup compact />
-              <Text style={styles.title}>Vérifie l’appareil{`\n`}<Text style={styles.lime}>avant</Text> de l’acheter.</Text>
-              <Text style={styles.subtitle}>DealUp analyse ton iPhone ou ton MacBook,{`\n`}le prix, les photos et les preuves.</Text>
-              <View style={[styles.inputShell, shadows.floating]}>
+              <Text maxFontSizeMultiplier={1.08} style={[styles.title, compactDevice && styles.titleCompact]}>Vérifie l’appareil{`\n`}<Text style={styles.lime}>avant</Text> de l’acheter.</Text>
+              <Text maxFontSizeMultiplier={1.08} style={[styles.subtitle, compactDevice && styles.subtitleCompact]}>DealUp analyse ton iPhone ou ton MacBook,{`\n`}le prix, les photos et les preuves.</Text>
+              <View style={[styles.inputShell, compactDevice && styles.inputShellCompact, shadows.floating]}>
                 <Link2 size={24} color={colors.brand700} />
-                <TextInput value={url} onChangeText={(text) => { setUrl(text); setToast(''); }} placeholder="Lien de l’annonce Leboncoin" placeholderTextColor="#747A75" autoCapitalize="none" keyboardType="url" style={styles.input} onSubmitEditing={() => void submit()} />
-                <Pressable onPress={() => void paste()} hitSlop={8}><Text style={styles.paste}>Coller</Text></Pressable>
+                <TextInput maxFontSizeMultiplier={1.08} value={url} onChangeText={(text) => { setUrl(text); setToast(''); }} placeholder="Lien de l’annonce Leboncoin" placeholderTextColor="#747A75" autoCapitalize="none" keyboardType="url" style={styles.input} onSubmitEditing={() => void submit()} />
+                <Pressable onPress={() => void paste()} hitSlop={8}><Text maxFontSizeMultiplier={1.08} style={styles.paste}>Coller</Text></Pressable>
               </View>
             </View>
           </SafeAreaView>
           <Pressable accessibilityState={{ busy: isBusy || validating, disabled: isBusy || validating }} disabled={isBusy || validating} onPress={() => void submit()} style={({ pressed }) => [styles.verify, shadows.floating, pressed && styles.pressed]}>
-            <Text style={styles.verifyText}>Vérifier cette annonce</Text>{isBusy || validating ? <ActivityIndicator color={colors.brand900} /> : <ArrowRight size={26} color={colors.brand900} />}
+            <Text maxFontSizeMultiplier={1.08} style={styles.verifyText}>Vérifier cette annonce</Text>{isBusy || validating ? <ActivityIndicator color={colors.brand900} /> : <ArrowRight size={26} color={colors.brand900} />}
           </Pressable>
           {toast ? <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOutDown.duration(150)} style={styles.toast}><AlertCircle size={17} color="#FFD6D1" /><Text style={styles.toastText}>{toast}</Text><Pressable onPress={() => setToast('')} hitSlop={10}><X size={15} color="#FFD6D1" /></Pressable></Animated.View> : null}
         </View>
@@ -107,10 +115,16 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.lightSurface, overflow: 'hidden' }, scroll: { backgroundColor: 'transparent' },
-  hero: { width: '110%', alignSelf: 'center', minHeight: 515, zIndex: 2 }, heroSurface: { position: 'absolute', inset: 0, borderBottomLeftRadius: 48, borderBottomRightRadius: 48, overflow: 'hidden', backgroundColor: colors.brand900 }, heroImage: { position: 'absolute', top: 0, bottom: 0, left: '4.5%', width: '91%', height: '100%' }, heroShade: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,18,13,.08)' }, heroInner: { width: '91%', alignSelf: 'center', paddingHorizontal: layout.gutter, paddingTop: spacing.lg },
+  hero: { width: '110%', alignSelf: 'center', minHeight: 515, zIndex: 2 },
+  heroCompact: { minHeight: 484 },
+  heroSurface: { position: 'absolute', inset: 0, borderBottomLeftRadius: 48, borderBottomRightRadius: 48, overflow: 'hidden', backgroundColor: colors.brand900 }, heroImage: { position: 'absolute', top: 0, bottom: 0, left: '4.5%', width: '91%', height: '100%' }, heroShade: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,18,13,.08)' }, heroInner: { width: '91%', alignSelf: 'center', paddingHorizontal: layout.gutter, paddingTop: spacing.lg },
+  heroInnerCompact: { paddingTop: spacing.md },
   title: { color: colors.white, fontSize: 42, lineHeight: 48, fontWeight: '700', letterSpacing: -1.5, marginTop: 72 }, lime: { color: colors.lime },
+  titleCompact: { fontSize: 37, lineHeight: 43, marginTop: 54 },
   subtitle: { ...type.body, color: '#C0CEC7', marginTop: 18, lineHeight: 25 },
+  subtitleCompact: { fontSize: 15, lineHeight: 22, marginTop: 15 },
   inputShell: { height: 64, borderRadius: 16, backgroundColor: colors.white, marginTop: 28, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', gap: 12 }, input: { flex: 1, color: colors.lightInk, fontSize: 16 }, paste: { color: colors.brand700, fontWeight: '600' },
+  inputShellCompact: { marginTop: 22 },
   verify: { position: 'absolute', left: '9%', right: '9%', bottom: -34, height: 68, borderRadius: 34, zIndex: 5, backgroundColor: colors.lime, borderWidth: 5, borderColor: 'rgba(255,255,255,0.34)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 }, verifyText: { color: colors.brand900, fontSize: 18, fontWeight: '700' }, pressed: { opacity: 0.75 },
   toast: { position: 'absolute', left: '9%', right: '9%', top: 149, minHeight: 46, borderRadius: 23, zIndex: 8, paddingHorizontal: 15, flexDirection: 'row', alignItems: 'center', gap: 9, backgroundColor: 'rgba(64,16,14,.94)', borderWidth: 1, borderColor: 'rgba(255,120,108,.32)', shadowColor: '#000', shadowOpacity: .3, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }, toastText: { flex: 1, color: '#FFF4F2', fontSize: 13, fontWeight: '600' },
   light: { paddingHorizontal: layout.gutter, paddingTop: 49, paddingBottom: 120, zIndex: 1 }, guideLink: { minHeight: 38, alignSelf: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, compatibleLink: { minHeight: 34, alignSelf: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, guideText: { color: colors.brand700, fontSize: 13, fontWeight: '600' },

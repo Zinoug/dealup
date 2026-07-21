@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -54,6 +54,38 @@ class BillingService:
             return SubscriptionPlan.MONTHLY
         return SubscriptionPlan.NONE
 
+    def _topup_amount(self, product_id: str | None) -> int | None:
+        if product_id == self.settings.revenuecat_topup_15_product_id:
+            return 15
+        if product_id == self.settings.revenuecat_topup_40_product_id:
+            return 40
+        return None
+
+    def _grant_subscription_credit(
+        self,
+        user: User,
+        plan: SubscriptionPlan,
+        product_id: str,
+        purchased_at: datetime | None,
+        period_ends_at: datetime | None,
+    ) -> None:
+        if purchased_at is None or plan not in {SubscriptionPlan.WEEKLY, SubscriptionPlan.MONTHLY}:
+            return
+        source_id = f"subscription-period:{product_id}:{int(purchased_at.timestamp())}"
+        if self.usage.has_source_event(source_id):
+            return
+        amount = 15 if plan == SubscriptionPlan.WEEKLY else 60
+        self.usage.add_event(
+            UsageEvent(
+                user_id=user.id,
+                kind=UsageEventKind.INCLUDED_CREDIT,
+                amount=amount,
+                source_event_id=source_id,
+                period_started_at=purchased_at,
+                period_ends_at=period_ends_at,
+            )
+        )
+
     def verify_webhook(
         self,
         raw_body: bytes,
@@ -105,9 +137,12 @@ class BillingService:
             if isinstance(transaction_id, str) and transaction_id
             else event_id
         )
+        topup_amount = self._topup_amount(
+            product_id if isinstance(product_id, str) else None
+        )
         if (
             user
-            and product_id == self.settings.revenuecat_topup_product_id
+            and topup_amount is not None
             and event_type in {"INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"}
             and not self.usage.has_source_event(topup_source_id)
         ):
@@ -115,7 +150,7 @@ class BillingService:
                 UsageEvent(
                     user_id=user.id,
                     kind=UsageEventKind.TOPUP_CREDIT,
-                    amount=10,
+                    amount=topup_amount,
                     source_event_id=topup_source_id,
                 )
             )
@@ -123,14 +158,24 @@ class BillingService:
         plan = self._plan(product_id if isinstance(product_id, str) else None)
         if user and plan != SubscriptionPlan.NONE:
             subscription = self.repo.get_or_create_subscription(user.id)
+            purchased_at = _from_ms(event.get("purchased_at_ms"))
+            expires_at = _from_ms(event.get("expiration_at_ms"))
+            if event_type in {"INITIAL_PURCHASE", "RENEWAL", "PRODUCT_CHANGE"}:
+                self._grant_subscription_credit(
+                    user,
+                    plan,
+                    str(product_id),
+                    purchased_at,
+                    expires_at,
+                )
             subscription.plan = plan
             subscription.product_id = str(product_id)
             subscription.current_period_started_at = (
-                _from_ms(event.get("purchased_at_ms"))
+                purchased_at
                 or subscription.current_period_started_at
             )
             subscription.current_period_ends_at = (
-                _from_ms(event.get("expiration_at_ms"))
+                expires_at
                 or subscription.current_period_ends_at
             )
             subscription.environment = event.get("environment")
@@ -161,30 +206,7 @@ class BillingService:
         self.session.commit()
 
     def sync(self, user: User) -> BillingSyncResponse:
-        existing = self.repo.get_subscription(user.id)
         now = datetime.now(timezone.utc)
-        if self.settings.app_env != "production" and existing and existing.environment == "manual":
-            period_end = existing.current_period_ends_at
-            if period_end and not period_end.tzinfo:
-                period_end = period_end.replace(tzinfo=timezone.utc)
-            if (
-                existing.status == SubscriptionStatus.ACTIVE
-                and existing.plan in {SubscriptionPlan.WEEKLY, SubscriptionPlan.MONTHLY}
-                and period_end
-            ):
-                period_days = 7 if existing.plan == SubscriptionPlan.WEEKLY else 31
-                if existing.will_renew:
-                    while period_end <= now:
-                        existing.current_period_started_at = period_end
-                        period_end += timedelta(days=period_days)
-                    existing.current_period_ends_at = period_end
-                    self.session.commit()
-                if period_end > now:
-                    usage = UsageService(self.session).snapshot(user)
-                    return BillingSyncResponse(
-                        synced=True, plan=usage.plan, entitlement=usage.entitlement
-                    )
-
         payload = self.client.get_subscriber(user.clerk_user_id)
         subscriber = payload.get("subscriber", {})
         entitlements = (
@@ -197,12 +219,18 @@ class BillingService:
             if isinstance(subscriber, dict)
             else {}
         )
-        topup_transactions = (
-            non_subscriptions.get(self.settings.revenuecat_topup_product_id, [])
-            if isinstance(non_subscriptions, dict)
-            else []
-        )
-        if isinstance(topup_transactions, list):
+        topup_products = {
+            self.settings.revenuecat_topup_15_product_id: 15,
+            self.settings.revenuecat_topup_40_product_id: 40,
+        }
+        for topup_product_id, amount in topup_products.items():
+            topup_transactions = (
+                non_subscriptions.get(topup_product_id, [])
+                if isinstance(non_subscriptions, dict)
+                else []
+            )
+            if not isinstance(topup_transactions, list):
+                continue
             for transaction in topup_transactions:
                 if not isinstance(transaction, dict):
                     continue
@@ -217,7 +245,7 @@ class BillingService:
                         UsageEvent(
                             user_id=user.id,
                             kind=UsageEventKind.TOPUP_CREDIT,
-                            amount=10,
+                            amount=amount,
                             source_event_id=source_id,
                         )
                     )
@@ -233,15 +261,19 @@ class BillingService:
             else None
         )
         active = bool(entitlement) and (expires_at is None or expires_at > now)
-        subscription.plan = self._plan(
-            product_id if isinstance(product_id, str) else None
-        )
-        subscription.product_id = product_id if isinstance(product_id, str) else None
-        subscription.current_period_started_at = (
+        plan = self._plan(product_id if isinstance(product_id, str) else None)
+        purchased_at = (
             _from_iso(entitlement.get("purchase_date"))
             if isinstance(entitlement, dict)
             else None
         )
+        if active and isinstance(product_id, str):
+            self._grant_subscription_credit(
+                user, plan, product_id, purchased_at, expires_at
+            )
+        subscription.plan = plan
+        subscription.product_id = product_id if isinstance(product_id, str) else None
+        subscription.current_period_started_at = purchased_at
         subscription.current_period_ends_at = expires_at
         subscription.status = (
             SubscriptionStatus.ACTIVE if active else SubscriptionStatus.INACTIVE

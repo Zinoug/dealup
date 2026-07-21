@@ -1,0 +1,127 @@
+name: Deploy analysis worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "workers/analysis-lambda/**"
+      - ".github/workflows/deploy-analysis-worker.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: analysis-worker-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-west-3
+  AWS_ACCOUNT_ID: "540751377796"
+  ECR_REPOSITORY: dealup-analysis-production
+  LAMBDA_FUNCTION: dealup-analysis-production
+  LAMBDA_ROLE_ARN: arn:aws:iam::540751377796:role/dealup-analysis-production-role
+  MEDIA_BUCKET: dealup-private-media-prod-540751377796
+  SECRET_ARN: arn:aws:secretsmanager:eu-west-3:540751377796:secret:dealup/production/analysis-worker-35TlmS
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::540751377796:role/dealup-github-actions-production
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate production model
+        env:
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_INPUT_USD_PER_MILLION: ${{ vars.GEMINI_INPUT_USD_PER_MILLION }}
+          GEMINI_OUTPUT_USD_PER_MILLION: ${{ vars.GEMINI_OUTPUT_USD_PER_MILLION }}
+          GEMINI_THOUGHT_USD_PER_MILLION: ${{ vars.GEMINI_THOUGHT_USD_PER_MILLION }}
+          GEMINI_SEARCH_USD_PER_REQUEST: ${{ vars.GEMINI_SEARCH_USD_PER_REQUEST }}
+          PILOTERR_EUR_PER_REQUEST: ${{ vars.PILOTERR_EUR_PER_REQUEST }}
+          PROVIDER_PRICING_VERSION: ${{ vars.PROVIDER_PRICING_VERSION }}
+        run: |
+          test -n "$GEMINI_MODEL"
+          test -n "$GEMINI_INPUT_USD_PER_MILLION"
+          test -n "$GEMINI_OUTPUT_USD_PER_MILLION"
+          test -n "$GEMINI_THOUGHT_USD_PER_MILLION"
+          test -n "$GEMINI_SEARCH_USD_PER_REQUEST"
+          test -n "$PILOTERR_EUR_PER_REQUEST"
+          test -n "$PROVIDER_PRICING_VERSION"
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: workers/analysis-lambda
+          file: workers/analysis-lambda/Dockerfile
+          platforms: linux/amd64
+          provenance: false
+          push: true
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create or update Lambda
+        env:
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          GEMINI_INPUT_USD_PER_MILLION: ${{ vars.GEMINI_INPUT_USD_PER_MILLION }}
+          GEMINI_OUTPUT_USD_PER_MILLION: ${{ vars.GEMINI_OUTPUT_USD_PER_MILLION }}
+          GEMINI_THOUGHT_USD_PER_MILLION: ${{ vars.GEMINI_THOUGHT_USD_PER_MILLION }}
+          GEMINI_SEARCH_USD_PER_REQUEST: ${{ vars.GEMINI_SEARCH_USD_PER_REQUEST }}
+          PILOTERR_EUR_PER_REQUEST: ${{ vars.PILOTERR_EUR_PER_REQUEST }}
+          PROVIDER_PRICING_VERSION: ${{ vars.PROVIDER_PRICING_VERSION }}
+          IMAGE_URI: ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          ENVIRONMENT="Variables={APP_ENV=production,AWS_REGION=${AWS_REGION},MEDIA_BUCKET=${MEDIA_BUCKET},DEALUP_SECRET_ARN=${SECRET_ARN},GEMINI_MODEL=${GEMINI_MODEL},GEMINI_THINKING_LEVEL=low,GEMINI_STORE_INTERACTIONS=false,GEMINI_TIMEOUT_SECONDS=60,GEMINI_INPUT_USD_PER_MILLION=${GEMINI_INPUT_USD_PER_MILLION},GEMINI_OUTPUT_USD_PER_MILLION=${GEMINI_OUTPUT_USD_PER_MILLION},GEMINI_THOUGHT_USD_PER_MILLION=${GEMINI_THOUGHT_USD_PER_MILLION},GEMINI_SEARCH_USD_PER_REQUEST=${GEMINI_SEARCH_USD_PER_REQUEST},PILOTERR_EUR_PER_REQUEST=${PILOTERR_EUR_PER_REQUEST},MAX_LISTING_IMAGES=10,MAX_PRIVATE_IMAGES=10,MAX_LISTING_IMAGE_BYTES=10000000,PROVIDER_PRICING_VERSION=${PROVIDER_PRICING_VERSION}}"
+
+          if aws lambda get-function --function-name "$LAMBDA_FUNCTION" >/dev/null 2>&1; then
+            aws lambda update-function-code \
+              --function-name "$LAMBDA_FUNCTION" \
+              --image-uri "$IMAGE_URI" >/dev/null
+            aws lambda wait function-updated --function-name "$LAMBDA_FUNCTION"
+            aws lambda update-function-configuration \
+              --function-name "$LAMBDA_FUNCTION" \
+              --timeout 90 \
+              --memory-size 1536 \
+              --environment "$ENVIRONMENT" >/dev/null
+            aws lambda wait function-updated --function-name "$LAMBDA_FUNCTION"
+          else
+            aws lambda create-function \
+              --function-name "$LAMBDA_FUNCTION" \
+              --package-type Image \
+              --code ImageUri="$IMAGE_URI" \
+              --role "$LAMBDA_ROLE_ARN" \
+              --architectures x86_64 \
+              --timeout 90 \
+              --memory-size 1536 \
+              --environment "$ENVIRONMENT" >/dev/null
+            aws lambda wait function-active-v2 --function-name "$LAMBDA_FUNCTION"
+          fi
+
+          aws lambda put-function-concurrency \
+            --function-name "$LAMBDA_FUNCTION" \
+            --reserved-concurrent-executions 10 >/dev/null
+
+      - name: Verify deployed Lambda
+        run: |
+          aws lambda get-function-configuration \
+            --function-name "$LAMBDA_FUNCTION" \
+            --query '{FunctionArn:FunctionArn,State:State,LastUpdateStatus:LastUpdateStatus,MemorySize:MemorySize,Timeout:Timeout}'

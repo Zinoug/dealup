@@ -12,7 +12,7 @@ Cette app contient du code natif (RevenueCat, Apple Sign-In, notifications, Sent
 cp .env.example .env
 npm install --include=dev
 npx expo prebuild --platform ios
-npx expo run:ios
+npm run ios
 ```
 
 Après le premier build natif, démarrer Metro séparément lors des sessions suivantes :
@@ -21,17 +21,19 @@ Après le premier build natif, démarrer Metro séparément lors des sessions su
 npx expo start --dev-client
 ```
 
+Le script `npm run ios` désactive uniquement l’upload Sentry des sourcemaps pendant le build Debug local. Le SDK Sentry reste actif dans l’app avec `EXPO_PUBLIC_SENTRY_DSN`. Les builds EAS de production doivent au contraire recevoir `SENTRY_ORG`, `SENTRY_PROJECT` et `SENTRY_AUTH_TOKEN` afin d’envoyer leurs sourcemaps.
+
 Si l’app affiche `No script URL provided`, Metro n’est pas lancé ou le build précédent a échoué. Vérifier aussi l’espace disque disponible avant de reconstruire.
 
 ## Intégrations actives
 
-- Clerk : Apple, Google et code reçu par e-mail ;
+- Clerk : Apple, Google et e-mail + mot de passe ; le code e-mail sert uniquement à vérifier une nouvelle adresse ou à récupérer un mot de passe ;
 - FastAPI : token Clerk envoyé dans `Authorization: Bearer …` ;
 - RevenueCat : achats, restauration et prix App Store réels ;
 - PostHog : UUID interne `/v1/me`, e-mail et fournisseur comme propriétés de personne, événements sans contenu privé ;
 - Sentry : erreurs sans PII explicite ;
 - historique, quota, rapports et photos : chargés depuis l’API au lancement.
-- notifications Expo Push : demandées après une première inscription, réactivables dans « Ton espace », puis envoyées par le worker à la fin d’une analyse.
+- rappel local iOS : proposé après une première inscription, réactivable dans « Ton espace » et planifié chaque jour à 18 h 30 directement par l’appareil ; aucun push n’est envoyé par le worker.
 
 Les outils de développement sont contrôlés par `EXPO_PUBLIC_DEV_TOOLS`. Ils donnent accès aux huit fixtures visuelles et ajoutent sur un vrai rapport le bouton « Revoir l’animation d’analyse ». Ce replay relit les photos privées déjà archivées et le rapport localement ; il ne crée aucun job, n’appelle ni Piloterr ni Gemini et ne consomme aucun quota. En preview et production, ces outils sont désactivés.
 

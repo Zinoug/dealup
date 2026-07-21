@@ -37,7 +37,6 @@ class Settings(BaseSettings):
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"
     sentry_dsn: str = ""
-    expo_push_endpoint: str = "https://exp.host/--/api/v2/push/send"
 
 
 @lru_cache

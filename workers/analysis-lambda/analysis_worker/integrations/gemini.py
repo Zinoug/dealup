@@ -338,18 +338,9 @@ def parse_candidate(text: str) -> dict[str, Any]:
             "Response did not contain a JSON object",
             "GEMINI_RESPONSE_INVALID",
         )
-    if not isinstance(payload.get("headline"), str) or not payload["headline"].strip():
-        raise GeminiError(
-            "Gemini response missed headline",
-            "Missing headline",
-            "GEMINI_RESPONSE_INVALID",
-        )
-    if not isinstance(payload.get("summary"), str) or not payload["summary"].strip():
-        raise GeminiError(
-            "Gemini response missed summary",
-            "Missing summary",
-            "GEMINI_RESPONSE_INVALID",
-        )
+    # Personalized copy is recoverable: the postprocessor supplies safe defaults
+    # when Gemini omits headline or summary. Only data required to compute the
+    # deterministic report should fail the analysis.
     scores = payload.get("scores")
     if not isinstance(scores, dict) or any(
         key not in scores

@@ -15,10 +15,10 @@ Read `../AGENTS.md`, `README.md`, `../docs/product/product.md`, `../DESIGN.md`, 
 
 ## Product rules
 
-- The dominant path is auth → onboarding de valeur pour les nouveaux comptes → choix facultatif des notifications → URL/share → teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → action/reanalysis.
+- The dominant path is auth → onboarding de valeur pour les nouveaux comptes → choix facultatif du rappel local quotidien → URL/share → teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → action/reanalysis.
 - Account is required before any URL identification.
 - No trial and no complete free analysis. The teaser cannot expose score, verdict, price estimate, risks, or seller messages.
-- Weekly is 4.99 EUR / 15 analyses; Monthly is 12.99 EUR / 60; top-up is 10 / 4.99 EUR.
+- Weekly is 4.99 EUR / 15 analyses; Monthly is 12.99 EUR / 60; top-ups are 15 / 4.99 EUR and 40 / 9.99 EUR.
 - Seller reanalysis is free; a full listing refresh consumes one unit.
 - Compatible categories are iPhone 11+/SE 2/3 and MacBook Air/Pro M1+. Unsupported/unknown listings never show a paywall.
 - Private seller text and images must never be reused for another user.

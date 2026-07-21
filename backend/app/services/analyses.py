@@ -215,8 +215,16 @@ class AnalysisService:
         self._dispatch(analysis, charged=True)
         self.analytics.capture(
             user.id,
-            "analysis_created",
-            {"analysis_id": analysis.id, "purchase_mode": data.purchase_mode.value},
+            "analysis_started",
+            {
+                "analysis_id": analysis.id,
+                "kind": analysis.kind.value,
+                "purchase_mode": data.purchase_mode.value,
+                "device_category": identification.device_category,
+                "quota_source": reservation.source,
+                "has_seller_context": data.seller_context.already_contacted,
+                "seller_media_count": len(data.seller_context.media_ids),
+            },
         )
         return self._accepted(analysis, reservation.source)
 
@@ -277,6 +285,19 @@ class AnalysisService:
         self.analytics.capture(
             user.id, "seller_reply_added", {"analysis_id": parent.id}
         )
+        self.analytics.capture(
+            user.id,
+            "analysis_started",
+            {
+                "analysis_id": analysis.id,
+                "kind": analysis.kind.value,
+                "purchase_mode": analysis.purchase_mode.value,
+                "device_category": analysis.device_category,
+                "quota_source": "free_reanalysis",
+                "has_seller_context": True,
+                "seller_media_count": len(data.media_ids),
+            },
+        )
         return self._accepted(analysis, None)
 
     def refresh(
@@ -321,6 +342,21 @@ class AnalysisService:
         reservation = self.usage.reserve(user, analysis.id)
         self.session.commit()
         self._dispatch(analysis, charged=True)
+        self.analytics.capture(
+            user.id,
+            "analysis_started",
+            {
+                "analysis_id": analysis.id,
+                "kind": analysis.kind.value,
+                "purchase_mode": analysis.purchase_mode.value,
+                "device_category": analysis.device_category,
+                "quota_source": reservation.source,
+                "has_seller_context": bool(analysis.seller_context),
+                "seller_media_count": len(
+                    (analysis.seller_context or {}).get("media") or []
+                ),
+            },
+        )
         return self._accepted(analysis, reservation.source)
 
     def retry(self, user: User, analysis_id: str) -> AnalysisAccepted:

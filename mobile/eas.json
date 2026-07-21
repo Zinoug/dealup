@@ -10,7 +10,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_APP_ENV": "development",
-        "EXPO_PUBLIC_DEV_TOOLS": "true"
+        "EXPO_PUBLIC_DEV_TOOLS": "true",
+        "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "preview": {

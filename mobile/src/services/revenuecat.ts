@@ -17,8 +17,11 @@ export interface BillingProduct {
 export interface BillingProducts {
   weekly: BillingProduct | null;
   monthly: BillingProduct | null;
-  topUp: BillingProduct | null;
+  topUp15: BillingProduct | null;
+  topUp40: BillingProduct | null;
 }
+
+export type TopUpQuantity = 15 | 40;
 
 let configuredUserId: string | null = null;
 let packages = new Map<string, PurchasesPackage>();
@@ -60,7 +63,8 @@ async function loadPackages(): Promise<BillingProducts> {
   return {
     weekly: publicProduct(findPackage(runtime.revenueCatWeeklyProductId)),
     monthly: publicProduct(findPackage(runtime.revenueCatMonthlyProductId)),
-    topUp: publicProduct(findPackage(runtime.revenueCatTopUpProductId)),
+    topUp15: publicProduct(findPackage(runtime.revenueCatTopUp15ProductId)),
+    topUp40: publicProduct(findPackage(runtime.revenueCatTopUp40ProductId)),
   };
 }
 
@@ -84,11 +88,14 @@ export const revenueCat = {
     return (await Purchases.purchasePackage(packageForPlan(plan))).customerInfo;
   },
 
-  async purchaseTopUp(userId: string): Promise<CustomerInfo> {
+  async purchaseTopUp(userId: string, quantity: TopUpQuantity): Promise<CustomerInfo> {
     await ensureConfigured(userId);
     if (!packages.size) await loadPackages();
-    const item = findPackage(runtime.revenueCatTopUpProductId);
-    if (!item) throw new Error('Le pack de 10 analyses est indisponible.');
+    const productId = quantity === 15
+      ? runtime.revenueCatTopUp15ProductId
+      : runtime.revenueCatTopUp40ProductId;
+    const item = findPackage(productId);
+    if (!item) throw new Error(`Le pack de ${quantity} analyses est indisponible.`);
     return (await Purchases.purchasePackage(item)).customerInfo;
   },
 

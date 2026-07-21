@@ -13,7 +13,6 @@ from analysis_worker.integrations import (
     MediaStorage,
     PiloterrClient,
     PiloterrError,
-    PushNotifier,
 )
 from analysis_worker.repositories import AnalysisRepository
 from analysis_worker.rules import REPORT_SCHEMA_VERSION
@@ -33,7 +32,6 @@ class AnalysisProcessor:
         gemini: GeminiClient,
         storage: MediaStorage,
         analytics: Analytics,
-        notifier: PushNotifier | None = None,
     ) -> None:
         self.settings = settings
         self.repository = repository
@@ -41,31 +39,6 @@ class AnalysisProcessor:
         self.gemini = gemini
         self.storage = storage
         self.analytics = analytics
-        self.notifier = notifier
-
-    def _notify(self, user_id: str, analysis_id: str, *, completed: bool) -> None:
-        if self.notifier is None:
-            return
-        try:
-            tokens = self.repository.push_tokens(user_id)
-            if completed:
-                title = "Ton rapport DealUp est prêt"
-                body = "Ouvre DealUp pour découvrir le verdict."
-            else:
-                title = "L’analyse n’a pas abouti"
-                body = "Ouvre DealUp pour réessayer."
-            self.notifier.send(
-                tokens,
-                title=title,
-                body=body,
-                data={"analysis_id": analysis_id, "status": "completed" if completed else "failed"},
-            )
-        except Exception as exc:
-            logger.warning(
-                "analysis=%s stage=push_failed detail=%s",
-                analysis_id,
-                type(exc).__name__,
-            )
 
     def process(self, analysis_id: str) -> dict[str, str | int]:
         job = self.repository.reserve(analysis_id)
@@ -227,18 +200,27 @@ class AnalysisProcessor:
                 analysis_id,
                 round((time.monotonic() - started) * 1000),
             )
+            completion_properties = {
+                "analysis_id": analysis_id,
+                "kind": job.kind,
+                "model": model_id,
+                "device_category": job.device_category,
+                "template_id": processed.result.template_id.value,
+                "verdict": processed.result.verdict.get("type"),
+                "deal_score": processed.result.verdict.get("deal_score"),
+                "duration_ms": metadata["total_duration_ms"],
+                "listing_image_count": metadata["listing_image_count"],
+                "private_image_count": metadata["private_image_count"],
+            }
             self.analytics.capture(
                 job.user_id,
-                "analysis_completed",
-                {
-                    "analysis_id": analysis_id,
-                    "kind": job.kind,
-                    "model": model_id,
-                    "device_category": job.device_category,
-                    "template_id": processed.result.template_id.value,
-                },
+                (
+                    "reanalysis_completed"
+                    if job.kind == "reanalysis"
+                    else "analysis_completed"
+                ),
+                completion_properties,
             )
-            self._notify(job.user_id, analysis_id, completed=True)
             return {
                 "status": "completed",
                 "analysis_id": analysis_id,
@@ -290,10 +272,20 @@ class AnalysisProcessor:
         )
         self.analytics.capture(
             job.user_id,
-            "analysis_failed",
-            {"analysis_id": analysis_id, "kind": job.kind, "error_code": error_code},
+            (
+                "analysis_timed_out"
+                if error_code == "GEMINI_TIMEOUT"
+                else "analysis_failed"
+            ),
+            {
+                "analysis_id": analysis_id,
+                "kind": job.kind,
+                "device_category": job.device_category,
+                "error_code": error_code,
+                "failure_stage": failure_stage,
+                "duration_ms": total_duration_ms,
+            },
         )
-        self._notify(job.user_id, analysis_id, completed=False)
         result: dict[str, str | int] = {
             "status": "failed",
             "analysis_id": analysis_id,

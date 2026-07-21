@@ -33,7 +33,7 @@ DealUp est une aide à la décision, pas une certification. L’application ne g
 | MacBook | MacBook Air et MacBook Pro avec puce Apple M1 ou plus récente |
 | Non compatible | iPhone plus ancien, MacBook Intel, iPad, Apple Watch, Android et appareil non identifié |
 | Compte | Clerk obligatoire avant de traiter un lien |
-| Authentification | Apple, Google et email avec code |
+| Authentification | Apple, Google et e-mail + mot de passe ; code e-mail uniquement à la première vérification et à la récupération |
 | Accès | Hard paywall, sans essai gratuit ni analyse complète gratuite |
 | Teaser | Identification privée Piloterr avant paiement |
 | Paiement | RevenueCat et App Store |
@@ -54,7 +54,7 @@ flowchart TD
     A["Connexion ou inscription Clerk"] --> B{"Nouveau compte ?"}
     B -->|"Oui"| C["Onboarding de valeur"]
     B -->|"Non"| D{"Entrée Leboncoin"}
-    C --> E["Choix des notifications d’analyse"]
+    C --> E["Choix du rappel quotidien local"]
     E --> D
     D -->|"URL collée"| F["Identification Piloterr privée"]
     D -->|"Partage iOS"| F
@@ -79,7 +79,7 @@ Si une URL partagée arrive avant connexion, elle est conservée localement. Apr
 
 Un utilisateur gratuit remplit le même contexte d’achat et vendeur qu’un abonné. Le contrôle d’accès intervient seulement sur l’action finale « Lancer l’analyse ». Avant un achat réussi, aucun quota n’est réservé et aucun appel Gemini n’est lancé. Après achat, l’analyse démarre directement avec le contexte déjà saisi.
 
-L’onboarding post-inscription comporte cinq écrans : démonstration statique des quatre étapes sur une vraie photo d’annonce de démonstration, comparaison animée prix affiché/offre avec une économie d’exemple clairement mise en avant, compression visuelle des recherches en un rapport DealUp, courbe de clarté grise « sans DealUp » face à la courbe verte « avec DealUp », puis demande contextuelle des notifications. Refuser ou reporter les notifications ne bloque jamais l’app.
+L’onboarding post-inscription comporte cinq écrans : démonstration statique des quatre étapes sur une vraie photo d’annonce de démonstration, comparaison animée prix affiché/offre avec une économie d’exemple clairement mise en avant, compression visuelle des recherches en un rapport DealUp, courbe de clarté grise « sans DealUp » face à la courbe verte « avec DealUp », puis demande contextuelle du rappel local quotidien. Refuser ou reporter le rappel ne bloque jamais l’app.
 
 L’écran de rapidité affiche « 39 annonces avant de choisir » et présente 39 comme le nombre moyen d’annonces d’occasion consultées avant l’achat d’un appareil tech. Cette donnée est une hypothèse marketing explicitement retenue par le fondateur et sa source externe reste à documenter avant publication. Le visuel ne prétend pas que DealUp réduit le nombre d’annonces consultées : il montre que l’application accélère l’évaluation de chacune en regroupant prix, photos, preuves, risques, verdict et action.
 
@@ -138,7 +138,8 @@ Si oui, l’utilisateur peut ajouter le texte, des captures et de nouvelles phot
 | --- | ---: | ---: |
 | Hebdomadaire (`weekly`) | 4,99 €/semaine | 15 nouvelles annonces par semaine |
 | Mensuel (`monthly`) | 12,99 €/mois, soit 2,93 €/semaine | 60 nouvelles annonces par mois |
-| Top-up | 4,99 € | 10 nouvelles analyses |
+| Recharge | 4,99 € | 15 nouvelles analyses |
+| Recharge « Meilleure valeur » | 9,99 € | 40 nouvelles analyses |
 
 Décisions :
 
@@ -147,15 +148,17 @@ Décisions :
 - aucune offre annuelle en V1 ;
 - même niveau fonctionnel pour l’Hebdomadaire et le Mensuel ;
 - le Mensuel porte le badge « Le plus populaire » dans le paywall ;
-- le top-up est réservé aux abonnés actifs et n’expire pas ;
-- le quota inclus est consommé avant le top-up.
+- les recharges sont réservées aux abonnés actifs et leur solde n’expire pas ;
+- chaque paiement hebdomadaire ajoute 15 crédits et chaque paiement mensuel en ajoute 60 ;
+- les crédits inclus non utilisés restent cumulés ;
+- le solde inclus cumulé est consommé avant le top-up.
 
 Le prix hebdomadaire affiché pour le Mensuel est calculé dynamiquement avec `prix_mensuel / (31 / 7)`, puis arrondi au centime le plus proche : troisième décimale supérieure ou égale à 5 vers le haut, sinon vers le bas. Aucun symbole d’approximation n’est affiché.
 
 Upsell à épuisement :
 
-- Hebdomadaire : proposer le Mensuel puis le top-up ;
-- Mensuel : proposer le top-up.
+- Hebdomadaire : proposer le Mensuel puis les deux recharges ;
+- Mensuel : proposer les deux recharges.
 
 Produits RevenueCat prévus :
 
@@ -163,7 +166,8 @@ Produits RevenueCat prévus :
 premium
 dealup_premium_weekly
 dealup_premium_monthly
-dealup_analysis_topup_10
+dealup_analysis_topup_15
+dealup_analysis_topup_40
 ```
 
 RevenueCat est l’autorité de facturation. Le backend ne fait jamais confiance à un entitlement envoyé par le mobile.
@@ -391,7 +395,7 @@ Un laboratoire de développement masqué permet de prévisualiser les huit combi
 
 `listing_identifications` conserve l’URL privée, l’identifiant Leboncoin, le payload Piloterr brut et normalisé, le teaser, la compatibilité et le profil appareil.
 
-`users` conserve l’identifiant interne, l’identifiant Clerk, l’e-mail normalisé, le nom affiché facultatif, le fournisseur d’authentification et les dates de synchronisation. Le profil est récupéré via l’API Clerk après la première authentification puis rafraîchi au maximum une fois par jour ; aucun webhook Clerk n’est nécessaire en V1. Clerk reste la source de vérité et aucun mot de passe n’est stocké.
+`users` conserve l’identifiant interne, l’identifiant Clerk, l’e-mail normalisé, le nom affiché facultatif, le fournisseur d’authentification et les dates de synchronisation. Le profil est récupéré via l’API Clerk après la première authentification puis rafraîchi au maximum une fois par jour ; aucun webhook Clerk n’est nécessaire en V1. Clerk reste la source de vérité des identités et mots de passe : DealUp ne reçoit, ne journalise et ne stocke aucun mot de passe.
 
 `usage_events` est le registre immuable des débits, crédits, top-ups et recrédits. Les soldes sont calculés depuis ce registre ; aucun compteur de crédits fragile n’est stocké dans `users`.
 
@@ -443,7 +447,7 @@ Les écrans liés à une annonce — teaser, paywall, préparation, analyse, rap
 
 Il n’existe pas de banque d’images par modèle en V1 et aucun mockup générique iPhone/MacBook n’est affiché. Les deux visuels de famille déjà licenciés sont réservés à la page des appareils compatibles et à la landing. Un futur `asset_key` pourra brancher d’autres visuels officiels ou licenciés uniquement sur les surfaces non probatoires. Jauges, halos, glows et animations sont dessinés en code.
 
-Les notifications de rapport terminé ou d’analyse échouée sont implémentées. Elles ne contiennent ni modèle, ni vendeur, ni URL, ni verdict sur l’écran verrouillé. Leur activation est facultative, disponible à la fin de l’onboarding et dans « Ton espace ». Un tap ouvre le rapport concerné. L’usage futur de notifications produit ou marketing reste à décider et ne doit pas faire l’objet d’une promesse dans l’interface.
+Le worker n’envoie aucune notification. L’app propose facultativement, à la fin de l’onboarding et dans « Ton espace », un rappel local quotidien à 18 h 30 : « Une annonce en vue ? Vérifie-la avec DealUp avant de te décider. » Il est planifié directement par iOS et ne nécessite ni jeton Expo Push, ni appel serveur. Un futur usage de notifications distantes exige une nouvelle décision produit.
 
 ## 17. Hors périmètre V1
 
@@ -471,5 +475,5 @@ Les notifications de rapport terminé ou d’analyse échouée sont implémenté
 - identifiants finaux App Store Connect et RevenueCat ;
 - résultats réels du pricing Hebdomadaire/Mensuel et des upsells ;
 - intensité finale des animations, sons et haptiques ;
-- validation sur appareils réels de Clerk, RevenueCat, PostHog, Sentry et Expo Push dans les environnements preview/production ;
+- validation sur appareils réels de Clerk, RevenueCat, PostHog, Sentry et du rappel local iOS dans les environnements preview/production ;
 - décision future d’ajouter iPad, Apple Watch ou Android.

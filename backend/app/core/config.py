@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     revenuecat_webhook_hmac_secret: str = ""
     revenuecat_weekly_product_id: str = "dealup_premium_weekly"
     revenuecat_monthly_product_id: str = "dealup_premium_monthly"
-    revenuecat_topup_product_id: str = "dealup_analysis_topup_10"
+    revenuecat_topup_15_product_id: str = "dealup_analysis_topup_15"
+    revenuecat_topup_40_product_id: str = "dealup_analysis_topup_40"
 
     posthog_api_key: str = ""
     posthog_host: str = "https://eu.i.posthog.com"

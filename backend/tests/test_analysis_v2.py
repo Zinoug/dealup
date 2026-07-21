@@ -15,6 +15,8 @@ from app.models import (
     Subscription,
     SubscriptionPlan,
     SubscriptionStatus,
+    UsageEvent,
+    UsageEventKind,
     User,
 )
 from app.schemas.analysis import AnalysisResult
@@ -66,6 +68,14 @@ def activate_subscription() -> None:
                 current_period_started_at=now - timedelta(days=1),
                 current_period_ends_at=now + timedelta(days=6),
                 will_renew=True,
+            )
+        )
+        session.add(
+            UsageEvent(
+                user_id=user.id,
+                kind=UsageEventKind.INCLUDED_CREDIT,
+                amount=15,
+                source_event_id="subscription-period:test-v2",
             )
         )
         session.commit()

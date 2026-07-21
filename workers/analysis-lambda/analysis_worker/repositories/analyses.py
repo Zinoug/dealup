@@ -294,10 +294,3 @@ class AnalysisRepository:
                     },
                 )
             connection.commit()
-
-    def push_tokens(self, user_id: str) -> list[str]:
-        with psycopg.connect(self.database_url) as connection:
-            rows = connection.execute(
-                "SELECT push_token FROM devices WHERE user_id = %s", (user_id,)
-            ).fetchall()
-        return [row[0] for row in rows]

@@ -48,6 +48,13 @@ alembic revision --autogenerate -m "description"
 
 `ANALYSIS_INVOKE_MODE=disabled` conserve les jobs en `pending` pour le développement. En environnement déployé, utiliser `aws`.
 
+## Production Railway
+
+Railway construit l'API avec `Dockerfile`, applique Alembic via la commande de
+pré-déploiement de `railway.json`, puis démarre Uvicorn sur le port injecté par
+Railway. Le runbook Railway + AWS Lambda + S3 est dans
+[`../docs/operations/production.md`](../docs/operations/production.md).
+
 Les suppressions S3 échouées restent sous forme de jobs idempotents. Un scheduler peut relancer :
 
 ```bash

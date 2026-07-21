@@ -33,6 +33,35 @@ class UsageRepository:
         )
         return abs(int(value or 0))
 
+    def included_balance(self, user_id: str) -> int:
+        first_credit = (
+            select(func.min(UsageEvent.created_at))
+            .where(
+                UsageEvent.user_id == user_id,
+                UsageEvent.kind == UsageEventKind.INCLUDED_CREDIT,
+            )
+            .scalar_subquery()
+        )
+        value = self.session.scalar(
+            select(func.coalesce(func.sum(UsageEvent.amount), 0)).where(
+                UsageEvent.user_id == user_id,
+                (
+                    (UsageEvent.kind == UsageEventKind.INCLUDED_CREDIT)
+                    | (
+                        UsageEvent.kind.in_(
+                            [
+                                UsageEventKind.INCLUDED_DEBIT,
+                                UsageEventKind.FAILURE_REVERSAL,
+                            ]
+                        )
+                        & UsageEvent.period_started_at.is_not(None)
+                        & (UsageEvent.created_at >= first_credit)
+                    )
+                ),
+            )
+        )
+        return max(0, int(value or 0))
+
     def topup_balance(self, user_id: str) -> int:
         value = self.session.scalar(
             select(func.coalesce(func.sum(UsageEvent.amount), 0)).where(

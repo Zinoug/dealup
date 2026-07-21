@@ -7,6 +7,7 @@ import { BrandButton } from '@/components/brand-button';
 import { OptionRow } from '@/components/option-row';
 import { Screen } from '@/components/screen';
 import { ScreenHeader } from '@/components/screen-header';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, spacing, type } from '@/theme/tokens';
 
@@ -22,11 +23,17 @@ export default function AnalysisSetupScreen() {
       return;
     }
     setSellerContext(false);
+    telemetry.capture('analysis_form_completed', {
+      purchase_mode: purchaseMode,
+      has_seller_context: false,
+      seller_media_count: 0,
+      device_category: identification?.compatibility?.device?.category ?? null,
+    });
     if (!hasSubscription) {
       router.push({ pathname: '/paywall', params: { intent: 'analysis' } });
       return;
     }
-    if (usage.used >= usage.limit && usage.topUpRemaining <= 0) {
+    if (usage.includedRemaining <= 0 && usage.topUpRemaining <= 0) {
       router.replace('/quota');
       return;
     }

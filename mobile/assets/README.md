@@ -15,6 +15,13 @@ Les écrans utilisent déjà l’icône DealUp fournie. Les autres emplacements 
 | `devices/iphone-family-apple.webp` | visuel de famille iPhone identique à la landing, page de compatibilité uniquement |
 | `devices/macbook-family-apple.webp` | visuel de famille MacBook identique à la landing, page de compatibilité uniquement |
 | `brands/google-g.png` | marque Google officielle dans le bouton de connexion |
+| `brands/dealup-action-icon.svg` | source vectorielle fournie pour le pictogramme « Analyser avec DealUp » |
+| `brands/dealup-action-icon-source.png` | masque maître transparent validé, extrait du pictogramme noir plein de référence |
+| `brands/dealup-action-icon-{40,80,120}.png` | rendus template iOS 1×, 2× et 3× du pictogramme de l’Action Extension |
+| `guides/leboncoin-share-step-1.png` | capture officielle montrant le bouton Partager dans une annonce Leboncoin |
+| `guides/leboncoin-share-step-2.jpg` | capture officielle montrant l’action « Analyser avec DealUp » dans la feuille de partage iOS |
+
+Les trois rendus sont copiés directement dans le bundle natif de l’Action Extension sous les noms `DealUpActionIcon.png`, `DealUpActionIcon@2x.png` et `DealUpActionIcon@3x.png`. Ils ne passent volontairement pas par un catalogue AppIcon : iOS utilise leur canal alpha comme masque monochrome, tandis que l’icône principale colorée de DealUp reste inchangée.
 
 Les cinq références de fond fournies le 16 juillet servent uniquement de direction artistique. Elles ne sont pas embarquées dans l’application. Les fonds secondaires sont dessinés en SVG adaptatif dans `src/components/brand-background.tsx`, avec des variantes `tag`, `beams`, `focus`, `soft` et `light`.
 

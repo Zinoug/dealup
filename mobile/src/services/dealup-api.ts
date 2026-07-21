@@ -14,6 +14,17 @@ const API_URL = runtime.apiUrl;
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 let tokenProvider: (() => Promise<string | null>) | null = null;
 
+export class DealUpApiError extends Error {
+  constructor(
+    message: string,
+    public readonly code: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'DealUpApiError';
+  }
+}
+
 export interface StartAnalysisInput {
   identificationId: string;
   purchaseMode: PurchaseMode;
@@ -40,10 +51,14 @@ async function request<T>(path: string, init: RequestInit, token?: string): Prom
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
-      error?: { message?: string };
+      error?: { code?: string; message?: string };
       message?: string;
     } | null;
-    throw new Error(payload?.error?.message ?? payload?.message ?? 'DealUp n’a pas pu terminer cette action.');
+    throw new DealUpApiError(
+      payload?.error?.message ?? payload?.message ?? 'DealUp n’a pas pu terminer cette action.',
+      payload?.error?.code ?? `HTTP_${response.status}`,
+      response.status,
+    );
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -79,14 +94,18 @@ function mapDevice(value: Record<string, unknown>): DeviceProfile {
 
 function mapUsage(raw: any): Usage {
   const periodEnd = raw.included.period_ends_at ? new Date(raw.included.period_ends_at) : null;
+  const daysUntilNextCredit = periodEnd
+    ? Math.max(1, Math.ceil((periodEnd.getTime() - Date.now()) / 86_400_000))
+    : null;
   return {
     plan: raw.plan,
     active: raw.entitlement === 'active',
     used: raw.included.used,
     limit: raw.included.limit,
+    includedRemaining: raw.included.remaining,
     topUpRemaining: raw.top_up.remaining,
-    renewsLabel: periodEnd
-      ? `Remis à zéro le ${periodEnd.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
+    renewsLabel: daysUntilNextCredit
+      ? `+${raw.included.limit} crédits dans ${daysUntilNextCredit} j`
       : 'Aucune formule active',
   };
 }
@@ -383,13 +402,6 @@ export const dealupApi = {
       createdAt: raw.created_at,
       usage: mapUsage(raw.usage),
     };
-  },
-
-  async registerDevice(pushToken: string, token?: string): Promise<void> {
-    await request('/v1/devices', {
-      method: 'POST',
-      body: JSON.stringify({ push_token: pushToken, platform: 'ios' }),
-    }, token);
   },
 
   async deleteAccount(token?: string): Promise<void> {

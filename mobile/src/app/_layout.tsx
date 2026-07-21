@@ -1,8 +1,7 @@
 import { ClerkProvider } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import * as Sentry from '@sentry/react-native';
-import * as Notifications from 'expo-notifications';
-import { Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
@@ -10,6 +9,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AppStoreProvider } from '@/store/app-store';
 import { AppErrorToast } from '@/components/app-error-toast';
 import { colors } from '@/theme/tokens';
+import { ensureDailyReminderIfAuthorized } from '@/services/notifications';
 import { missingRequiredConfiguration, runtime } from '@/services/runtime';
 
 Sentry.init({
@@ -20,21 +20,10 @@ Sentry.init({
   tracesSampleRate: runtime.appEnv === 'production' ? 0.1 : 0,
 });
 
-function NotificationRouter() {
-  const router = useRouter();
-
+function LocalReminderBootstrap() {
   useEffect(() => {
-    const open = (response: Notifications.NotificationResponse | null) => {
-      const analysisId = response?.notification.request.content.data?.analysis_id;
-      if (typeof analysisId === 'string' && analysisId) {
-        router.push({ pathname: '/analysis/[id]', params: { id: analysisId } });
-        void Notifications.clearLastNotificationResponseAsync();
-      }
-    };
-    void Notifications.getLastNotificationResponseAsync().then(open);
-    const subscription = Notifications.addNotificationResponseReceivedListener(open);
-    return () => subscription.remove();
-  }, [router]);
+    void ensureDailyReminderIfAuthorized();
+  }, []);
 
   return null;
 }
@@ -52,7 +41,7 @@ function RootLayout() {
   return (
     <ClerkProvider publishableKey={runtime.clerkPublishableKey} tokenCache={tokenCache}>
       <AppStoreProvider>
-        <NotificationRouter />
+        <LocalReminderBootstrap />
         <Stack
           screenOptions={{
             headerShown: false,

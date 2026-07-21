@@ -137,6 +137,7 @@ export interface Usage {
   active: boolean;
   used: number;
   limit: number;
+  includedRemaining: number;
   topUpRemaining: number;
   renewsLabel: string;
 }

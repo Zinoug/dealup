@@ -9,7 +9,6 @@ from analysis_worker.integrations import (
     GeminiClient,
     MediaStorage,
     PiloterrClient,
-    PushNotifier,
 )
 from analysis_worker.repositories import AnalysisRepository
 from analysis_worker.services import AnalysisProcessor
@@ -42,6 +41,5 @@ def handler(event: dict[str, Any], context: Any) -> dict[str, str | int]:
             settings.aws_session_token,
         ),
         analytics=Analytics(settings.posthog_api_key, settings.posthog_host),
-        notifier=PushNotifier(settings.expo_push_endpoint),
     )
     return processor.process(analysis_id)

@@ -1,11 +1,14 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { DarkHeader, DarkSafeScreen, GlassCard } from '@/components/reference-ui';
 import { reportFixtures } from '@/data/dev-report-fixtures';
+import { runtime } from '@/services/runtime';
 import { colors, layout, type } from '@/theme/tokens';
 
 export default function ReportLabScreen() {
+  if (!runtime.devTools) return <Redirect href="/(tabs)" />;
+
   return (
     <DarkSafeScreen variant="focus" edges={['top', 'left', 'right']}>
       <DarkHeader title="Laboratoire rapports" />

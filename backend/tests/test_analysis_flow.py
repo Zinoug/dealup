@@ -11,6 +11,8 @@ from app.models import (
     Subscription,
     SubscriptionPlan,
     SubscriptionStatus,
+    UsageEvent,
+    UsageEventKind,
     User,
 )
 
@@ -117,6 +119,14 @@ def activate_subscription(clerk_user_id: str = "user_local_dealup") -> None:
                 current_period_started_at=now - timedelta(days=1),
                 current_period_ends_at=now + timedelta(days=6),
                 will_renew=True,
+            )
+        )
+        session.add(
+            UsageEvent(
+                user_id=user.id,
+                kind=UsageEventKind.INCLUDED_CREDIT,
+                amount=15,
+                source_event_id=f"subscription-period:test:{clerk_user_id}",
             )
         )
         session.commit()

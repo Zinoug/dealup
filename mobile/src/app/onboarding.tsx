@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { BarChart3, Bell, Check, FileSearch, Image as ImageIcon, ShieldCheck } from 'lucide-react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import { EntryBrand, EntryPrimaryButton, EntryScreen } from '@/components/entry-ui';
 import { DecisionClarityGraphic, PriceComparisonGraphic, ResearchSpeedGraphic } from '@/components/onboarding-value-graphics';
+import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors } from '@/theme/tokens';
 
@@ -16,6 +17,8 @@ const analysisSteps = [
   { label: 'Verdict et plan d’action', icon: ShieldCheck },
 ] as const;
 
+const onboardingSteps = ['analysis_preview', 'savings', 'research_speed', 'decision_clarity', 'notifications'] as const;
+
 export default function OnboardingScreen() {
   const [page, setPage] = useState(0);
   const [requesting, setRequesting] = useState(false);
@@ -23,14 +26,32 @@ export default function OnboardingScreen() {
   const compact = height < 760;
   const { completeOnboarding, pendingUrl, requestNotifications } = useAppStore();
 
+  useEffect(() => {
+    telemetry.capture('onboarding_step_viewed', {
+      step: page + 1,
+      step_key: onboardingSteps[page],
+      step_count: onboardingSteps.length,
+    });
+  }, [page]);
+
+  const completeStep = (extra?: Record<string, string>) => {
+    telemetry.capture('onboarding_step_completed', {
+      step: page + 1,
+      step_key: onboardingSteps[page],
+      step_count: onboardingSteps.length,
+      ...extra,
+    });
+  };
+
   const finish = () => {
     completeOnboarding();
     router.replace(pendingUrl ? '/handle-share' : '/(tabs)');
   };
   const enableNotifications = async () => {
     setRequesting(true);
-    await requestNotifications();
+    const result = await requestNotifications();
     setRequesting(false);
+    completeStep({ notification_result: result });
     finish();
   };
 
@@ -46,9 +67,9 @@ export default function OnboardingScreen() {
 
       <View style={styles.footer}>
         <OnboardingDots active={page} />
-        {page < 4 ? <EntryPrimaryButton label="Continuer" onPress={() => setPage((value) => value + 1)} /> : <>
+        {page < 4 ? <EntryPrimaryButton label="Continuer" onPress={() => { completeStep(); setPage((value) => value + 1); }} /> : <>
           <EntryPrimaryButton label="M’avertir" loading={requesting} onPress={() => void enableNotifications()} />
-          <Pressable disabled={requesting} onPress={finish} style={styles.later}><Text style={styles.laterText}>Plus tard</Text></Pressable>
+          <Pressable disabled={requesting} onPress={() => { completeStep({ notification_result: 'skipped' }); finish(); }} style={styles.later}><Text style={styles.laterText}>Plus tard</Text></Pressable>
         </>}
       </View>
     </EntryScreen>
@@ -111,8 +132,8 @@ function NotificationPage({ compact }: { compact: boolean }) {
   return (
     <View style={[styles.notificationPage, compact && styles.notificationPageCompact]}>
       <View style={styles.bellHalo}><View style={styles.bellCircle}><Bell color={colors.brand900} fill={colors.lime} size={46} strokeWidth={2.2} /></View></View>
-      <Text style={[styles.title, compact && styles.titleCompact]}>Ton verdict est prêt,{`\n`}même si tu quittes l’app.</Text>
-      <Text style={[styles.body, styles.notificationBody]}>DealUp peut t’avertir dès qu’une analyse ou une réanalyse se termine.</Text>
+      <Text style={[styles.title, compact && styles.titleCompact]}>Une annonce en vue ?{`\n`}Pense à la vérifier.</Text>
+      <Text style={[styles.body, styles.notificationBody]}>Active un rappel discret chaque soir avant de prendre ta décision.</Text>
     </View>
   );
 }
@@ -165,8 +186,8 @@ const styles = StyleSheet.create({
   bellHalo: { width: 142, height: 142, borderRadius: 71, backgroundColor: 'rgba(196,245,42,.08)', alignItems: 'center', justifyContent: 'center', marginBottom: 34, shadowColor: colors.lime, shadowOpacity: .28, shadowRadius: 30 },
   bellCircle: { width: 94, height: 94, borderRadius: 47, backgroundColor: colors.lime, alignItems: 'center', justifyContent: 'center' },
   notificationBody: { maxWidth: 330, marginTop: 14 },
-  footer: { gap: 11 },
-  dots: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
+  footer: { gap: 8, paddingTop: 14 },
+  dots: { marginBottom: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#60756C' },
   dotActive: { width: 18, height: 7, borderRadius: 4, backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .8, shadowRadius: 7 },
   later: { minHeight: 42, alignItems: 'center', justifyContent: 'center' },

@@ -15,6 +15,16 @@ def test_parser_accepts_json_surrounded_by_markdown() -> None:
     assert candidate["headline"] == "Avis"
 
 
+def test_parser_accepts_missing_personalized_copy() -> None:
+    candidate = parse_candidate(
+        '{"scores":{"price":70,"condition":70,"proofs":60,'
+        '"consistency":80,"transaction":75}}'
+    )
+
+    assert "headline" not in candidate
+    assert "summary" not in candidate
+
+
 def test_gemini_call_uses_system_json_example_without_response_schema() -> None:
     captured = {}
 

@@ -24,10 +24,14 @@ export default function HandleShareScreen() {
   useEffect(() => {
     if (!isReady || !isSignedIn || !candidateUrl || processed.current || !isLeboncoinUrl(candidateUrl)) return;
     processed.current = true;
-    identifyListing(candidateUrl).then((listing) => {
+    identifyListing(candidateUrl, 'share_extension').then((listing) => {
       if (listing) {
         clearSharedPayloads();
-        router.replace('/listing-preview');
+        if (listing.compatibility?.status === 'SUPPORTED') {
+          router.replace('/listing-preview');
+        } else {
+          router.replace({ pathname: '/compatible-devices', params: { status: listing.compatibility?.status ?? 'UNKNOWN' } });
+        }
       }
     });
   }, [candidateUrl, clearSharedPayloads, identifyListing, isReady, isSignedIn]);

@@ -153,7 +153,7 @@ export function DecisionClarityGraphic() {
         <Svg height="166" viewBox="0 0 320 166" width="100%">
           <Defs>
             <SvgGradient id="dealFill" x1="0" x2="0" y1="0" y2="1">
-              <Stop offset="0" stopColor={colors.lime} stopOpacity=".20" />
+              <Stop offset="0" stopColor={colors.lime} stopOpacity="0.20" />
               <Stop offset="1" stopColor={colors.lime} stopOpacity="0" />
             </SvgGradient>
           </Defs>
@@ -161,7 +161,7 @@ export function DecisionClarityGraphic() {
           <Path d="M24 139 H300" stroke="rgba(160,179,170,.42)" strokeWidth="1.4" />
           <AnimatedPath d="M34 128 C110 126 188 119 286 108" fill="none" stroke="#78847F" strokeDasharray="500" strokeDashoffset={grayOffset} strokeLinecap="round" strokeWidth="5" />
           <Path d="M34 128 C93 126 125 109 161 87 C204 60 245 40 286 31 L286 139 L34 139 Z" fill="url(#dealFill)" />
-          <AnimatedPath d="M34 128 C93 126 125 109 161 87 C204 60 245 40 286 31" fill="none" opacity=".18" stroke={colors.lime} strokeDasharray="500" strokeDashoffset={greenOffset} strokeLinecap="round" strokeWidth="13" />
+          <AnimatedPath d="M34 128 C93 126 125 109 161 87 C204 60 245 40 286 31" fill="none" opacity="0.18" stroke={colors.lime} strokeDasharray="500" strokeDashoffset={greenOffset} strokeLinecap="round" strokeWidth="13" />
           <AnimatedPath d="M34 128 C93 126 125 109 161 87 C204 60 245 40 286 31" fill="none" stroke={colors.lime} strokeDasharray="500" strokeDashoffset={greenOffset} strokeLinecap="round" strokeWidth="5" />
           <Circle cx="286" cy="108" fill="#78847F" r="6" />
           <Circle cx="286" cy="31" fill={colors.lime} r="7" stroke="#E9FF9A" strokeWidth="2" />
