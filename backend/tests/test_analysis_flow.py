@@ -73,6 +73,15 @@ class FakePiloterr:
         }
 
 
+class CountingPiloterr(FakePiloterr):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def fetch_ad(self, url: str) -> dict:
+        self.calls += 1
+        return super().fetch_ad(url)
+
+
 class FakeMacBookPiloterr:
     def fetch_ad(self, url: str) -> dict:
         return {
@@ -289,6 +298,44 @@ def test_identification_exposes_private_preview_and_normalizes_large_photos(
             assert "profile_picture_url" not in {
                 attribute["key"] for attribute in item.normalized_payload["attributes"]
             }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_free_user_gets_one_identification_and_existing_url_is_reused(client) -> None:
+    from app.main import app
+
+    piloterr = CountingPiloterr()
+    app.dependency_overrides[piloterr_dependency] = lambda: piloterr
+    first_url = "https://www.leboncoin.fr/ad/telephones_objets_connectes/3012186547"
+    try:
+        first = client.post("/v1/listings/identify", json={"url": first_url})
+        assert first.status_code == 200, first.text
+        assert piloterr.calls == 1
+
+        reused = client.post(
+            "/v1/listings/identify",
+            json={"url": f"{first_url}?utm_source=share"},
+        )
+        assert reused.status_code == 200, reused.text
+        assert reused.json()["identification_id"] == first.json()["identification_id"]
+        assert piloterr.calls == 1
+
+        pending = client.get("/v1/listings")
+        assert pending.status_code == 200, pending.text
+        assert [item["identification_id"] for item in pending.json()["items"]] == [
+            first.json()["identification_id"]
+        ]
+
+        blocked = client.post(
+            "/v1/listings/identify",
+            json={
+                "url": "https://www.leboncoin.fr/ad/telephones_objets_connectes/3999999999"
+            },
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["error"]["code"] == "FREE_IDENTIFICATION_LIMIT_REACHED"
+        assert piloterr.calls == 1
     finally:
         app.dependency_overrides.clear()
 

@@ -82,6 +82,26 @@ function mapListing(raw: Record<string, any>, identificationId: string): Listing
   };
 }
 
+function mapIdentification(response: any, sourceUrl = ''): ListingTeaser {
+  const device = response.compatibility.device ? mapDevice(response.compatibility.device) : null;
+  return {
+    identificationId: response.identification_id,
+    sourceUrl,
+    title: response.teaser.title,
+    priceCents: response.teaser.asking_price_cents ?? 0,
+    currency: response.teaser.currency,
+    thumbnailUrl: response.teaser.thumbnail_url,
+    previewPhotoUrls: response.teaser.preview_photo_urls ?? [],
+    location: response.teaser.location ?? '',
+    photoCount: response.teaser.photo_count,
+    facts: response.teaser.facts,
+    sellerName: 'Vendeur Leboncoin',
+    postedLabel: 'Annonce identifiée',
+    compatibility: { status: response.compatibility.status, reason: response.compatibility.reason, device },
+    existingAnalysisId: response.existing_analysis_id ?? null,
+  };
+}
+
 function mapDevice(value: Record<string, unknown>): DeviceProfile {
   return {
     category: value.category as DeviceProfile['category'],
@@ -257,28 +277,32 @@ export const dealupApi = {
       { method: 'POST', body: JSON.stringify({ url }) },
       token,
     );
-    const device = response.compatibility.device
-      ? mapDevice(response.compatibility.device)
-      : null;
-    return {
-      identificationId: response.identification_id,
-      sourceUrl: url,
-      title: response.teaser.title,
-      priceCents: response.teaser.asking_price_cents ?? 0,
-      currency: response.teaser.currency,
-      thumbnailUrl: response.teaser.thumbnail_url,
-      previewPhotoUrls: response.teaser.preview_photo_urls ?? [],
-      location: response.teaser.location ?? '',
-      photoCount: response.teaser.photo_count,
-      facts: response.teaser.facts,
-      sellerName: 'Vendeur Leboncoin',
-      postedLabel: 'Annonce identifiée',
-      compatibility: {
-        status: response.compatibility.status,
-        reason: response.compatibility.reason,
-        device,
-      },
-    };
+    return mapIdentification(response, url);
+  },
+
+  async getIdentification(id: string, token?: string): Promise<ListingTeaser> {
+    const response = await request<any>(`/v1/listings/${id}`, { method: 'GET' }, token);
+    return mapIdentification(response);
+  },
+
+  async listPendingIdentifications(token?: string): Promise<AnalysisSummary[]> {
+    const response = await request<any>('/v1/listings', { method: 'GET' }, token);
+    return response.items.map((item: any) => {
+      const listing = mapIdentification(item);
+      return {
+        entryType: 'identification' as const,
+        id: item.identification_id,
+        latestAnalysisId: item.identification_id,
+        status: 'identified' as const,
+        kind: 'initial' as const,
+        device: listing.compatibility?.device ?? null,
+        listing,
+        verdict: null,
+        templateId: null,
+        createdAt: item.created_at,
+        completedAt: null,
+      };
+    });
   },
 
   async startAnalysis(input: StartAnalysisInput, token?: string): Promise<{ analysisId: string }> {
@@ -367,6 +391,7 @@ export const dealupApi = {
   async listAnalyses(token?: string): Promise<AnalysisSummary[]> {
     const response = await request<any>('/v1/analyses?limit=50', { method: 'GET' }, token);
     return response.items.map((item: any) => ({
+      entryType: 'analysis' as const,
       id: item.id,
       latestAnalysisId: item.latest_analysis_id,
       status: item.status,

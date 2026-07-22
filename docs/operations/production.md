@@ -62,10 +62,16 @@ Supprimer immédiatement les deux fichiers temporaires après exécution.
 
 ## 3. Déploiement automatique du worker
 
-Dans GitHub, créer uniquement la variable de dépôt :
+Les variables de dépôt suivantes sont configurées à partir du worker local :
 
 ```text
-GEMINI_MODEL=<identifiant exact validé manuellement>
+GEMINI_MODEL=gemini-3.5-flash
+GEMINI_INPUT_USD_PER_MILLION=1.50
+GEMINI_OUTPUT_USD_PER_MILLION=9.00
+GEMINI_THOUGHT_USD_PER_MILLION=9.00
+GEMINI_SEARCH_USD_PER_REQUEST=0.014
+PILOTERR_EUR_PER_REQUEST=0.00272
+PROVIDER_PRICING_VERSION=gemini-3.5-flash-standard-2026-06
 ```
 
 Le workflow `.github/workflows/deploy-analysis-worker.yml` utilise GitHub OIDC :

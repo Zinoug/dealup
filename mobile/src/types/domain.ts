@@ -44,6 +44,7 @@ export interface ListingTeaser {
   sellerName: string;
   postedLabel: string;
   compatibility?: ListingCompatibility;
+  existingAnalysisId?: string | null;
 }
 
 export interface RiskItem {
@@ -153,9 +154,10 @@ export interface AccountProfile {
 }
 
 export interface AnalysisSummary {
+  entryType: 'analysis' | 'identification';
   id: string;
   latestAnalysisId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'identified' | 'pending' | 'processing' | 'completed' | 'failed';
   kind: 'initial' | 'reanalysis' | 'refresh';
   device: DeviceProfile | null;
   listing: ListingTeaser | null;

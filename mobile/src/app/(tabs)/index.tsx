@@ -31,8 +31,8 @@ export default function HomeScreen() {
   const [validating, setValidating] = useState(false);
   const [toast, setToast] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
-  const { identifyListing, isBusy, analyses } = useAppStore();
-  const latest = analyses.find((item) => item.status === 'completed' && item.listing && item.device && item.verdict);
+  const { identifyListing, openIdentification, isBusy, analyses } = useAppStore();
+  const latest = analyses.find((item) => item.listing && item.device);
 
   useEffect(() => {
     if (!toast) return;
@@ -50,7 +50,9 @@ export default function HomeScreen() {
     }
     const listing = await identifyListing(url, 'manual');
     setValidating(false);
-    if (listing?.compatibility?.status === 'SUPPORTED') router.push('/listing-preview');
+    if (listing === 'PAYWALL_REQUIRED') router.push({ pathname: '/paywall', params: { intent: 'identification' } });
+    else if (listing?.existingAnalysisId) router.push({ pathname: '/analysis/[id]', params: { id: listing.existingAnalysisId } });
+    else if (listing?.compatibility?.status === 'SUPPORTED') router.push('/listing-preview');
     else if (listing) router.push({ pathname: '/compatible-devices', params: { status: listing.compatibility?.status ?? 'UNKNOWN' } });
     else setToast('Cette annonce ne peut pas être identifiée');
   };
@@ -100,10 +102,14 @@ export default function HomeScreen() {
         <View style={styles.light}>
           <Pressable onPress={() => setGuideOpen(true)} style={styles.guideLink}><Share2 size={16} color={colors.brand700} /><Text style={styles.guideText}>Comment analyser depuis Leboncoin ?</Text><ChevronRight size={15} color={colors.brand700} /></Pressable>
           <Pressable onPress={() => router.push('/compatible-devices')} style={styles.compatibleLink}><Smartphone size={15} color={colors.brand700} /><Text style={styles.guideText}>Voir les appareils compatibles</Text><ChevronRight size={15} color={colors.brand700} /></Pressable>
-          <View style={styles.lastHeader}><Clock3 size={22} color={colors.brand700} /><View><Text style={styles.lastTitle}>Dernière analyse</Text><Text style={styles.today}>Aujourd’hui</Text></View></View>
+          <View style={styles.lastHeader}><Clock3 size={22} color={colors.brand700} /><View><Text style={styles.lastTitle}>{latest?.entryType === 'identification' ? 'Dernière annonce' : 'Dernière analyse'}</Text><Text style={styles.today}>Aujourd’hui</Text></View></View>
           {latest?.listing && latest.device && latest.verdict ? <Pressable onPress={() => router.push({ pathname: '/analysis/[id]', params: { id: latest.latestAnalysisId } })} style={styles.latest}>
             <DeviceThumbnail uri={latest.listing.thumbnailUrl} size={94} label={`Photo de ${latest.device.displayName}`} />
             <View style={styles.latestCopy}><Text numberOfLines={1} style={styles.productTitle}>{latest.listing.title.replace(' — ', ' ')}</Text><Text style={styles.productMeta}>{formatEuros(latest.listing.priceCents)} · {latest.listing.location}</Text><View style={styles.verdictRow}><View style={styles.miniScore}><Text style={styles.score}>{(latest.verdict.dealScore / 10).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</Text><Text style={styles.over}>/10</Text></View><View style={styles.divider} /><View style={styles.latestVerdict}><Text style={styles.verdictLabel}>●  Verdict</Text><Text numberOfLines={1} style={styles.verdict}>{verdictCopy[latest.verdict.type].title}</Text><Text numberOfLines={1} style={styles.reco}>{verdictCopy[latest.verdict.type].action}</Text></View></View></View>
+            <ChevronRight size={22} color={colors.lightMuted} />
+          </Pressable> : latest?.listing && latest.device && latest.entryType === 'identification' ? <Pressable onPress={() => void openIdentification(latest.id).then((listing) => { if (listing) router.push('/listing-preview'); })} style={styles.latest}>
+            <DeviceThumbnail uri={latest.listing.thumbnailUrl} size={94} label={`Photo de ${latest.device.displayName}`} />
+            <View style={styles.latestCopy}><Text numberOfLines={2} style={styles.productTitle}>{latest.listing.title.replace(' — ', ' ')}</Text><Text style={styles.productMeta}>{formatEuros(latest.listing.priceCents)} · {latest.listing.location}</Text><Text style={styles.pendingLabel}>À analyser</Text></View>
             <ChevronRight size={22} color={colors.lightMuted} />
           </Pressable> : null}
         </View>
@@ -130,4 +136,5 @@ const styles = StyleSheet.create({
   light: { paddingHorizontal: layout.gutter, paddingTop: 49, paddingBottom: 120, zIndex: 1 }, guideLink: { minHeight: 38, alignSelf: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, compatibleLink: { minHeight: 34, alignSelf: 'center', paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 }, guideText: { color: colors.brand700, fontSize: 13, fontWeight: '600' },
   lastHeader: { flexDirection: 'row', alignItems: 'center', gap: 13, marginTop: 24 }, lastTitle: { color: colors.lightInk, fontSize: 17, fontWeight: '600' }, today: { color: colors.lightMuted, fontSize: 12, marginTop: 1 },
   latest: { minHeight: 150, backgroundColor: '#FFFFFF', borderRadius: 24, marginTop: 14, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 13, borderWidth: 1, borderColor: '#E3E5DF', ...shadows.subtle }, latestCopy: { flex: 1 }, productTitle: { color: colors.lightInk, fontSize: 15, fontWeight: '700' }, productMeta: { color: colors.lightMuted, fontSize: 14, marginTop: 3 }, verdictRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 }, miniScore: { width: 58, height: 58, borderRadius: 29, borderWidth: 5, borderColor: '#69CF25', alignItems: 'center', justifyContent: 'center' }, score: { color: colors.lightInk, fontSize: 20, fontWeight: '700', lineHeight: 22 }, over: { color: colors.lightMuted, fontSize: 10 }, divider: { width: 1, height: 52, backgroundColor: colors.lightBorder, marginHorizontal: 12 }, latestVerdict: { flex: 1 }, verdictLabel: { color: colors.brand700, fontSize: 11 }, verdict: { color: colors.brand700, fontSize: 14, fontWeight: '700', marginTop: 3 }, reco: { color: colors.lightMuted, fontSize: 11, marginTop: 2 },
+  pendingLabel: { color: colors.brand700, fontSize: 13, fontWeight: '700', marginTop: 12 },
 });

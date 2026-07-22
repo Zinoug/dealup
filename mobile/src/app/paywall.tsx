@@ -16,7 +16,7 @@ export default function PaywallScreen() {
   const { height, fontScale } = useWindowDimensions();
   const compactDevice = height < 880 || fontScale > 1.05;
   const { intent } = useLocalSearchParams<{ intent?: string }>();
-  const { selectedPlan, choosePlan, purchasePlan, restorePurchases, identification, purchaseMode, alreadyContacted, startAnalysis, isBusy, billingProducts } = useAppStore();
+  const { selectedPlan, choosePlan, purchasePlan, restorePurchases, identification, purchaseMode, alreadyContacted, startAnalysis, identifyListing, pendingUrl, isBusy, billingProducts } = useAppStore();
   const device = identification?.compatibility?.device;
   const trackedView = useRef(false);
   useEffect(() => {
@@ -31,6 +31,14 @@ export default function PaywallScreen() {
   }, [device?.category, identification, intent, selectedPlan]);
   const target = device?.category === 'MACBOOK' ? 'ce MacBook' : device?.category === 'IPHONE' ? 'cet iPhone' : 'cet appareil';
   const continueAfterAccess = async () => {
+    if (intent === 'identification' && pendingUrl) {
+      const listing = await identifyListing(pendingUrl, 'manual');
+      if (listing && listing !== 'PAYWALL_REQUIRED') {
+        if (listing.existingAnalysisId) router.replace({ pathname: '/analysis/[id]', params: { id: listing.existingAnalysisId } });
+        else router.replace('/listing-preview');
+      }
+      return;
+    }
     if (intent === 'analysis' && identification && purchaseMode) {
       const id = await startAnalysis();
       if (id) {
@@ -79,7 +87,7 @@ export default function PaywallScreen() {
         </View>
 
         <View style={[styles.plans, compactDevice && styles.plansCompact]}>
-          <Plan compact={compactDevice} id="monthly" selected={selectedPlan === 'monthly'} onPress={choosePlan} title="Mensuel" price={monthly ? `${formatMonthlyPricePerWeek(Math.round(monthly.price * 100))} / semaine` : 'Chargement du prix…'} billing={monthly ? `Facturé ${monthly.priceString} par mois` : 'Prix App Store indisponible'} quota="60 nouvelles annonces par mois" badge="Le plus populaire" />
+          <Plan compact={compactDevice} id="monthly" selected={selectedPlan === 'monthly'} onPress={choosePlan} title="Mensuel" price={monthly ? `${formatMonthlyPricePerWeek(monthly.price, monthly.currencyCode)} / semaine` : 'Chargement du prix…'} billing={monthly ? `Facturé ${monthly.priceString} par mois` : 'Prix App Store indisponible'} quota="60 nouvelles annonces par mois" badge="Le plus populaire" />
           <Plan compact={compactDevice} id="weekly" selected={selectedPlan === 'weekly'} onPress={choosePlan} title="Hebdomadaire" price={weekly ? `${weekly.priceString} / semaine` : 'Chargement du prix…'} billing="Facturé chaque semaine" quota="15 nouvelles annonces par semaine" />
         </View>
 

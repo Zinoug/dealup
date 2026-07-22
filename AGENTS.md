@@ -17,7 +17,7 @@ Keep the monorepo simple: `mobile/`, `landing/`, `backend/`, `workers/`, and `do
 
 - iOS and Leboncoin only.
 - Supported devices are iPhone 11+, iPhone SE 2/3, and MacBook Air/Pro with Apple M1 or newer.
-- Unsupported or unknown devices are rejected before paywall and quota reservation.
+- The first free identification classifies unsupported or unknown devices before paywall and quota reservation. A second distinct URL from an unsubscribed account is paywalled before Piloterr to protect provider usage.
 - Clerk account required before processing a link.
 - Hard paywall with no free trial and no complete free analysis.
 - Weekly: 4.99 EUR, 15 new analyses per week.
@@ -34,6 +34,7 @@ Keep the monorepo simple: `mobile/`, `landing/`, `backend/`, `workers/`, and `do
 
 1. FastAPI verifies Clerk and maps `clerk_user_id` to an internal `users.id`.
 2. `POST /v1/listings/identify` calls Piloterr and stores a private identification.
+   The same user/listing reopens the existing identification or report without another Piloterr call. An unsubscribed account gets one new identification total.
 3. FastAPI classifies the device; unsupported and unknown listings stop before paywall or quota.
 4. `POST /v1/analyses` validates entitlement and reserves quota atomically.
 5. FastAPI commits the job and ledger entry, then invokes Lambda asynchronously.

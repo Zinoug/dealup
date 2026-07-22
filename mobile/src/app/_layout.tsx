@@ -9,7 +9,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { AppStoreProvider } from '@/store/app-store';
 import { AppErrorToast } from '@/components/app-error-toast';
 import { colors } from '@/theme/tokens';
-import { ensureDailyReminderIfAuthorized } from '@/services/notifications';
+import { ensureDailyReminderIfAuthorized, initializeNotificationTracking } from '@/services/notifications';
 import { missingRequiredConfiguration, runtime } from '@/services/runtime';
 
 Sentry.init({
@@ -23,6 +23,21 @@ Sentry.init({
 function LocalReminderBootstrap() {
   useEffect(() => {
     void ensureDailyReminderIfAuthorized();
+    let cleanup: (() => void) | undefined;
+    let disposed = false;
+    void initializeNotificationTracking().then((removeListener) => {
+      if (disposed) {
+        removeListener();
+        return;
+      }
+      cleanup = removeListener;
+    }).catch((reason) => {
+      Sentry.captureException(reason, { extra: { operation: 'initialize_notification_tracking' } });
+    });
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
   }, []);
 
   return null;

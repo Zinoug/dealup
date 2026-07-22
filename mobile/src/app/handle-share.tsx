@@ -25,9 +25,13 @@ export default function HandleShareScreen() {
     if (!isReady || !isSignedIn || !candidateUrl || processed.current || !isLeboncoinUrl(candidateUrl)) return;
     processed.current = true;
     identifyListing(candidateUrl, 'share_extension').then((listing) => {
-      if (listing) {
+      if (listing === 'PAYWALL_REQUIRED') {
+        router.replace({ pathname: '/paywall', params: { intent: 'identification' } });
+      } else if (listing) {
         clearSharedPayloads();
-        if (listing.compatibility?.status === 'SUPPORTED') {
+        if (listing.existingAnalysisId) {
+          router.replace({ pathname: '/analysis/[id]', params: { id: listing.existingAnalysisId } });
+        } else if (listing.compatibility?.status === 'SUPPORTED') {
           router.replace('/listing-preview');
         } else {
           router.replace({ pathname: '/compatible-devices', params: { status: listing.compatibility?.status ?? 'UNKNOWN' } });

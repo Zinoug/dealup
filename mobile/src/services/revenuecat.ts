@@ -76,8 +76,12 @@ function packageForPlan(plan: PlanId): PurchasesPackage {
 }
 
 export const revenueCat = {
-  async initialize(userId: string): Promise<{ products: BillingProducts; customerInfo: CustomerInfo }> {
+  async initialize(userId: string, email?: string): Promise<{ products: BillingProducts; customerInfo: CustomerInfo }> {
     await ensureConfigured(userId);
+    const normalizedEmail = email?.trim().toLowerCase();
+    if (normalizedEmail) {
+      await Purchases.setAttributes({ $email: normalizedEmail });
+    }
     const [products, customerInfo] = await Promise.all([loadPackages(), Purchases.getCustomerInfo()]);
     return { products, customerInfo };
   },

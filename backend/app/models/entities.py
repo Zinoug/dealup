@@ -93,6 +93,9 @@ class User(Base):
     clerk_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     clerk_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    free_identification_claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow
     )

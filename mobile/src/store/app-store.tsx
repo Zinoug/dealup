@@ -31,6 +31,7 @@ interface StartAnalysisContext {
 }
 
 type ListingSubmissionSource = 'manual' | 'share_extension';
+type IdentifyListingResult = ListingTeaser | 'PAYWALL_REQUIRED' | null;
 
 interface AppState extends PersistedState {
   isReady: boolean;
@@ -58,7 +59,8 @@ interface AppState extends PersistedState {
   deleteAccount: () => Promise<boolean>;
   signOut: () => Promise<void>;
   setPendingUrl: (url: string | null) => void;
-  identifyListing: (url: string, source?: ListingSubmissionSource) => Promise<ListingTeaser | null>;
+  identifyListing: (url: string, source?: ListingSubmissionSource) => Promise<IdentifyListingResult>;
+  openIdentification: (id: string) => Promise<ListingTeaser | null>;
   choosePlan: (plan: PlanId) => void;
   purchasePlan: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
@@ -130,6 +132,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isSignedIn = Boolean(clerkSignedIn && userId);
+  const userEmail = user?.primaryEmailAddress?.emailAddress ?? '';
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -152,7 +155,20 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const loadHistory = useCallback(async () => {
     if (!isSignedIn) return;
     try {
-      setAnalyses(await dealupApi.listAnalyses());
+      const [completedResult, pendingResult] = await Promise.allSettled([
+        dealupApi.listAnalyses(),
+        dealupApi.listPendingIdentifications(),
+      ]);
+
+      if (completedResult.status === 'rejected') throw completedResult.reason;
+
+      const pending = pendingResult.status === 'fulfilled' ? pendingResult.value : [];
+      if (pendingResult.status === 'rejected') {
+        telemetry.error(pendingResult.reason, { operation: 'load_pending_identifications' });
+      }
+
+      const completed = completedResult.value;
+      setAnalyses([...completed, ...pending].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
     } catch (reason) {
       telemetry.error(reason, { operation: 'load_history' });
       setError(errorMessage(reason, 'Ton historique n’a pas pu être chargé.'));
@@ -218,12 +234,12 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       return;
     }
     let active = true;
-    revenueCat.initialize(userId)
+    revenueCat.initialize(userId, userEmail)
       .then(({ products }) => { if (active) setBillingProducts(products); })
       .catch((reason) => telemetry.error(reason, { operation: 'initialize_revenuecat' }));
     void Promise.resolve().then(refreshAccount);
     return () => { active = false; };
-  }, [isSignedIn, refreshAccount, userId]);
+  }, [isSignedIn, refreshAccount, userEmail, userId]);
 
   const completeOnboarding = useCallback(() => {
     telemetry.capture('onboarding_completed');
@@ -306,6 +322,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       const listing = await dealupApi.identify(url, token);
       setIdentification(listing);
       setPendingUrl(null);
+      await loadHistory();
       const compatibilityStatus = listing.compatibility?.status ?? 'UNKNOWN';
       const deviceCategory = listing.compatibility?.device?.category ?? null;
       telemetry.capture('listing_identified', {
@@ -323,6 +340,12 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       }
       return listing;
     } catch (reason) {
+      if (errorCode(reason) === 'FREE_IDENTIFICATION_LIMIT_REACHED') {
+        setIdentification(null);
+        setPendingUrl(url);
+        telemetry.capture('paywall_required_after_identification_limit', { source });
+        return 'PAYWALL_REQUIRED';
+      }
       setError(errorMessage(reason, 'Cette annonce n’a pas pu être identifiée.'));
       telemetry.capture('listing_identification_failed', { source, error_code: errorCode(reason) });
       telemetry.error(reason, { operation: 'identify_listing' });
@@ -330,7 +353,27 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     } finally {
       setIsBusy(false);
     }
-  }, [getToken]);
+  }, [getToken, loadHistory]);
+
+  const openIdentification = useCallback(async (id: string) => {
+    setIsBusy(true);
+    setError(null);
+    try {
+      const listing = await dealupApi.getIdentification(id);
+      setIdentification(listing);
+      setPurchaseMode(null);
+      setAlreadyContacted(false);
+      setSellerReply('');
+      setSellerMediaUris([]);
+      return listing;
+    } catch (reason) {
+      setError(errorMessage(reason, 'Cette annonce n’a pas pu être chargée.'));
+      telemetry.error(reason, { operation: 'open_identification' });
+      return null;
+    } finally {
+      setIsBusy(false);
+    }
+  }, []);
 
   const choosePlan = useCallback((plan: PlanId) => {
     telemetry.capture('paywall_plan_selected', { plan });
@@ -548,7 +591,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     isSignedIn,
     userId: userId ?? null,
     userName: user?.fullName || user?.firstName || 'Ton compte',
-    userEmail: user?.primaryEmailAddress?.emailAddress ?? '',
+    userEmail,
     hasSubscription: usage.active,
     usage,
     billingProducts,
@@ -570,6 +613,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     signOut,
     setPendingUrl,
     identifyListing,
+    openIdentification,
     choosePlan,
     purchasePlan,
     restorePurchases,
@@ -587,7 +631,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     toggleChecklist,
     clearError,
     resetLocalDevelopmentState,
-  }), [activeAnalysisId, alreadyContacted, analyses, authLoaded, beginOnboarding, billingProducts, choosePlan, clearError, completeAnalysis, completeOnboarding, deleteAccount, error, identification, identifyListing, isBusy, isSignedIn, loadAnalysis, loadHistory, loadReplayMedia, pendingUrl, persisted, purchaseMode, purchasePlan, purchaseTopUp, reanalyze, refreshAccount, reports, requestNotifications, resetLocalDevelopmentState, restorePurchases, retryAnalysis, sellerMediaUris, sellerReply, setSellerContext, signOut, startAnalysis, storageReady, toggleChecklist, usage, user, userId]);
+  }), [activeAnalysisId, alreadyContacted, analyses, authLoaded, beginOnboarding, billingProducts, choosePlan, clearError, completeAnalysis, completeOnboarding, deleteAccount, error, identification, identifyListing, isBusy, isSignedIn, loadAnalysis, loadHistory, loadReplayMedia, openIdentification, pendingUrl, persisted, purchaseMode, purchasePlan, purchaseTopUp, reanalyze, refreshAccount, reports, requestNotifications, resetLocalDevelopmentState, restorePurchases, retryAnalysis, sellerMediaUris, sellerReply, setSellerContext, signOut, startAnalysis, storageReady, toggleChecklist, usage, user, userEmail, userId]);
 
   return <AppStoreContext.Provider value={value}>{children}</AppStoreContext.Provider>;
 }

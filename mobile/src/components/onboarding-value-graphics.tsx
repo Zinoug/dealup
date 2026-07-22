@@ -32,15 +32,6 @@ function AnimatedAmount({ progress, total }: { progress: Animated.Value; total: 
   return <Text style={styles.amount}>{amount.toLocaleString('fr-FR')} €</Text>;
 }
 
-function AnimatedCount({ progress, total }: { progress: Animated.Value; total: number }) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    const listener = progress.addListener(({ value }) => setCount(Math.round(total * value)));
-    return () => progress.removeListener(listener);
-  }, [progress, total]);
-  return <Text style={styles.researchCount}>{count}</Text>;
-}
-
 export function PriceComparisonGraphic() {
   const asking = useReveal(110);
   const offer = useReveal(250);
@@ -79,13 +70,8 @@ export function ResearchSpeedGraphic() {
 
   return (
     <View style={styles.researchCard}>
-      <View style={styles.researchHeadline}>
-        <AnimatedCount progress={manual} total={39} />
-        <Text style={styles.researchUnit}>annonces d’occasion consultées{`\n`}en moyenne avant l’achat</Text>
-      </View>
-
       <View style={styles.manualLane}>
-        <Text style={styles.researchEyebrow}>CHAQUE ANNONCE, À LA MAIN</Text>
+        <Text style={styles.researchEyebrow}>À LA MAIN</Text>
         <View style={styles.manualSteps}>
           {['Prix', 'Photos', 'Preuves', 'Risques'].map((label, index) => (
             <View key={label} style={styles.manualStep}>
@@ -96,7 +82,7 @@ export function ResearchSpeedGraphic() {
             </View>
           ))}
         </View>
-        <Text style={styles.manualConclusion}>Tout recouper, puis tirer ta propre conclusion.</Text>
+        <Text style={styles.manualConclusion}>Tout recouper avant de pouvoir conclure.</Text>
       </View>
 
       <Animated.View
@@ -108,7 +94,7 @@ export function ResearchSpeedGraphic() {
           },
         ]}
       >
-        <Text style={styles.dealupEyebrow}>CHAQUE ANNONCE, AVEC DEALUP</Text>
+        <Text style={styles.dealupEyebrow}>AVEC DEALUP AI</Text>
         <View style={styles.dealupTrack}>
           <Animated.View style={[styles.dealupFill, { width: dealup.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
         </View>
@@ -122,7 +108,7 @@ export function ResearchSpeedGraphic() {
             </View>
           </View>
           <View style={styles.reportVerdict}>
-            <ScoreGauge label="" score={78} size={108} />
+            <ScoreGauge label="" score={78} size={82} />
             <View style={styles.reportVerdictCopy}>
               <Text style={styles.reportHeadline}>Bon appareil, prix à négocier.</Text>
               <View style={styles.reportSignal}><CheckCircle2 color={colors.brand400} size={13} /><Text style={styles.reportSignalText}>Annonce cohérente</Text></View>
@@ -189,33 +175,30 @@ const styles = StyleSheet.create({
   savingsLine: { color: colors.white, fontSize: 17, fontWeight: '600', marginTop: 1 },
   savingsAmount: { color: colors.lime, fontSize: 28, fontWeight: '800', letterSpacing: -.8 },
   savingsContext: { color: '#81958B', fontSize: 10, marginTop: -1 },
-  researchCard: { minHeight: 382, borderRadius: 25, borderWidth: 1, borderColor: 'rgba(137,188,165,.24)', backgroundColor: 'rgba(0,34,26,.78)', paddingHorizontal: 20, paddingTop: 17, paddingBottom: 13 },
+  researchCard: { minHeight: 298, borderRadius: 25, borderWidth: 1, borderColor: 'rgba(137,188,165,.24)', backgroundColor: 'rgba(0,34,26,.78)', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 13 },
   researchEyebrow: { color: '#879890', fontSize: 9, fontWeight: '700', letterSpacing: 1.25 },
-  researchHeadline: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  researchCount: { color: colors.white, fontSize: 68, lineHeight: 73, fontWeight: '800', letterSpacing: -3 },
-  researchUnit: { color: '#A9BAB2', fontSize: 12, lineHeight: 16, fontWeight: '600' },
-  manualLane: { marginTop: 8 },
+  manualLane: { marginTop: 0 },
   manualSteps: { flexDirection: 'row', gap: 6, marginTop: 9 },
   manualStep: { flex: 1 },
   manualTrack: { height: 6, borderRadius: 3, overflow: 'hidden', backgroundColor: 'rgba(130,149,140,.16)' },
   manualFill: { height: '100%', borderRadius: 3, backgroundColor: '#718078' },
   manualLabel: { color: '#8D9D95', fontSize: 8, textAlign: 'center', marginTop: 5 },
   manualConclusion: { color: '#8D9E95', fontSize: 10, lineHeight: 14, marginTop: 9 },
-  dealupLane: { minHeight: 222, marginTop: 13, borderRadius: 19, borderWidth: 1, borderColor: 'rgba(197,245,43,.36)', backgroundColor: 'rgba(12,66,47,.74)', paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, shadowColor: colors.lime, shadowOpacity: .12, shadowRadius: 17 },
+  dealupLane: { minHeight: 184, marginTop: 12, borderRadius: 19, borderWidth: 1, borderColor: 'rgba(197,245,43,.36)', backgroundColor: 'rgba(12,66,47,.74)', paddingHorizontal: 14, paddingTop: 11, paddingBottom: 10, shadowColor: colors.lime, shadowOpacity: .12, shadowRadius: 17 },
   dealupEyebrow: { color: '#D9F78A', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
   dealupTrack: { height: 8, borderRadius: 4, overflow: 'hidden', backgroundColor: 'rgba(190,231,78,.13)', marginTop: 10 },
   dealupFill: { height: '100%', borderRadius: 4, backgroundColor: colors.lime, shadowColor: colors.lime, shadowOpacity: .9, shadowRadius: 9 },
   dealupInputs: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 5 },
   dealupInput: { color: '#9EB4A8', fontSize: 8 },
-  reportPreview: { flex: 1, marginTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(166,213,191,.17)', paddingTop: 8 },
-  reportHeader: { minHeight: 35, flexDirection: 'row', alignItems: 'center' },
-  reportPhoto: { width: 34, height: 34, borderRadius: 9, backgroundColor: colors.darkCard },
+  reportPreview: { flex: 1, marginTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(166,213,191,.17)', paddingTop: 6 },
+  reportHeader: { minHeight: 30, flexDirection: 'row', alignItems: 'center' },
+  reportPhoto: { width: 30, height: 30, borderRadius: 8, backgroundColor: colors.darkCard },
   reportIdentity: { flex: 1, marginLeft: 9 },
   reportDevice: { color: colors.white, fontSize: 12, lineHeight: 15, fontWeight: '700' },
   reportMeta: { color: '#91A69B', fontSize: 9, lineHeight: 12, marginTop: 1 },
-  reportVerdict: { minHeight: 95, flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+  reportVerdict: { minHeight: 76, flexDirection: 'row', alignItems: 'center', marginTop: 1 },
   reportVerdictCopy: { flex: 1, marginLeft: 5, paddingRight: 2 },
-  reportHeadline: { color: colors.white, fontSize: 14, lineHeight: 17, fontWeight: '700', letterSpacing: -.2, marginBottom: 7 },
+  reportHeadline: { color: colors.white, fontSize: 13, lineHeight: 15, fontWeight: '700', letterSpacing: -.2, marginBottom: 4 },
   reportSignal: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
   reportSignalText: { color: '#C5D9CE', fontSize: 9, lineHeight: 12, fontWeight: '600' },
   reportTodoText: { color: '#E7C589', fontSize: 9, lineHeight: 12, fontWeight: '600' },

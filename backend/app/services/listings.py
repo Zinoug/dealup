@@ -1,4 +1,7 @@
+import re
+from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy.orm import Session
 
@@ -7,7 +10,12 @@ from app.domain import classify_listing, normalize_listing
 from app.integrations import PiloterrClient
 from app.models import ListingIdentification, User
 from app.repositories import ListingRepository
-from app.schemas.api import ListingIdentificationResponse, ListingTeaser
+from app.schemas.api import (
+    ListingIdentificationResponse,
+    ListingTeaser,
+    PendingListingSummary,
+    PendingListingsResponse,
+)
 
 
 TEASER_FACT_KEYS = {
@@ -23,6 +31,16 @@ TEASER_FACT_KEYS = {
     "screen_size",
     "keyboard",
 }
+
+
+def _canonical_url(url: str) -> str:
+    parsed = urlsplit(url)
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", ""))
+
+
+def _listing_id_from_url(url: str) -> str | None:
+    match = re.search(r"(?:/|^)(\d{8,})(?:/|$)", urlsplit(url).path)
+    return match.group(1) if match else None
 
 
 def _first_price_cents(payload: dict[str, Any]) -> int | None:
@@ -120,19 +138,57 @@ class ListingService:
         self, user: User, url: str, can_start: bool
     ) -> ListingIdentificationResponse:
         user_id = user.id
-        # Usage reads may have opened an implicit transaction. Close it before Piloterr.
+        canonical_url = _canonical_url(url)
+        external_id = _listing_id_from_url(canonical_url)
+        existing = self.repo.find_owned(
+            user_id, external_id=external_id, source_url=canonical_url
+        )
+        if existing:
+            return self._response(existing, can_start)
+
+        claim_time: datetime | None = None
+        if not can_start:
+            claim_time = datetime.now(timezone.utc)
+            if not self.repo.claim_free_identification(user_id, claim_time):
+                self.session.rollback()
+                raise DealUpError(
+                    "FREE_IDENTIFICATION_LIMIT_REACHED",
+                    "Active une formule pour identifier une nouvelle annonce.",
+                    403,
+                    {"paywall_required": True},
+                )
+            self.session.commit()
+
+        # No database transaction remains open during the Piloterr request.
         self.session.rollback()
-        payload = self.piloterr.fetch_ad(url)
+        try:
+            payload = self.piloterr.fetch_ad(url)
+        except Exception:
+            if claim_time is not None:
+                self.repo.release_free_identification(user_id, claim_time)
+                self.session.commit()
+            raise
+
+        payload_url = _canonical_url(str(payload.get("url") or canonical_url))
+        payload_external_id = (
+            str(payload.get("list_id")) if payload.get("list_id") else external_id
+        )
+        duplicate = self.repo.find_owned(
+            user_id,
+            external_id=payload_external_id,
+            source_url=payload_url,
+        )
+        if duplicate:
+            self.session.rollback()
+            return self._response(duplicate, can_start)
         teaser = build_teaser(payload)
         normalized_payload = normalize_listing(payload)
         compatibility = classify_listing(payload)
         identification = self.repo.add(
             ListingIdentification(
                 user_id=user_id,
-                source_url=str(payload.get("url") or url),
-                external_id=str(payload.get("list_id"))
-                if payload.get("list_id")
-                else None,
+                source_url=payload_url,
+                external_id=payload_external_id,
                 payload=payload,
                 normalized_payload=normalized_payload,
                 teaser=teaser,
@@ -147,26 +203,11 @@ class ListingService:
             )
         )
         self.session.commit()
-        return ListingIdentificationResponse(
-            identification_id=identification.id,
-            external_id=identification.external_id,
-            teaser=ListingTeaser.model_validate(teaser),
-            compatibility=compatibility.as_dict(),
-            access={
-                "subscription_required": not can_start,
-                "can_start_analysis": can_start and compatibility.status == "SUPPORTED",
-            },
-            created_at=identification.created_at,
-        )
+        return self._response(identification, can_start)
 
-    def get(
-        self, user: User, identification_id: str, can_start: bool
+    def _response(
+        self, item: ListingIdentification, can_start: bool
     ) -> ListingIdentificationResponse:
-        item = self.repo.get_owned(identification_id, user.id)
-        if not item:
-            raise DealUpError(
-                "LISTING_NOT_FOUND", "Annonce identifiée introuvable.", 404
-            )
         compatibility = classify_listing(item.payload)
         compatibility_payload = {
             "status": item.compatibility_status or compatibility.status,
@@ -183,5 +224,34 @@ class ListingService:
                 "can_start_analysis": can_start
                 and compatibility_payload["status"] == "SUPPORTED",
             },
+            existing_analysis_id=self.repo.latest_analysis_id(item.id, item.user_id),
             created_at=item.created_at,
         )
+
+    def get(
+        self, user: User, identification_id: str, can_start: bool
+    ) -> ListingIdentificationResponse:
+        item = self.repo.get_owned(identification_id, user.id)
+        if not item:
+            raise DealUpError(
+                "LISTING_NOT_FOUND", "Annonce identifiée introuvable.", 404
+            )
+        return self._response(item, can_start)
+
+    def list_pending(self, user: User, limit: int = 50) -> PendingListingsResponse:
+        items = []
+        for item in self.repo.list_pending_owned(user.id, limit=limit):
+            compatibility = classify_listing(item.payload)
+            items.append(
+                PendingListingSummary(
+                    identification_id=item.id,
+                    teaser=ListingTeaser.model_validate(item.teaser),
+                    compatibility={
+                        "status": item.compatibility_status or compatibility.status,
+                        "reason": compatibility.reason,
+                        "device": item.device_profile or compatibility.as_dict()["device"],
+                    },
+                    created_at=item.created_at,
+                )
+            )
+        return PendingListingsResponse(items=items)

@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/react-native';
 import PostHog from 'posthog-react-native';
 
+import { clearNotificationAttribution, getDailyReminderAttribution } from '@/services/notification-attribution';
 import { runtime } from '@/services/runtime';
 
 type Properties = Record<string, boolean | number | string | null>;
@@ -13,10 +14,19 @@ const posthog = runtime.posthogApiKey
     })
   : null;
 
+const ATTRIBUTED_EVENTS = new Set([
+  'listing_url_submitted',
+  'paywall_viewed',
+  'purchase_started',
+  'purchase_completed',
+]);
+
 export const telemetry = {
   capture(event: string, properties?: Properties) {
-    posthog?.capture(event, properties);
-    if (__DEV__ && !posthog) console.info(`[DealUp event] ${event}`, properties ?? {});
+    const attribution = ATTRIBUTED_EVENTS.has(event) ? getDailyReminderAttribution() : undefined;
+    const enrichedProperties = attribution ? { ...properties, ...attribution } : properties;
+    posthog?.capture(event, enrichedProperties);
+    if (__DEV__ && !posthog) console.info(`[DealUp event] ${event}`, enrichedProperties ?? {});
   },
   screen(name: string) {
     posthog?.screen(name);
@@ -44,6 +54,7 @@ export const telemetry = {
     ]);
   },
   reset() {
+    clearNotificationAttribution();
     posthog?.reset();
     Sentry.setUser(null);
   },

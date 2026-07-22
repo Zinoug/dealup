@@ -40,7 +40,19 @@ class ListingIdentificationResponse(BaseModel):
     teaser: ListingTeaser
     compatibility: ListingCompatibility
     access: dict[str, bool]
+    existing_analysis_id: str | None = None
     created_at: datetime
+
+
+class PendingListingSummary(BaseModel):
+    identification_id: str
+    teaser: ListingTeaser
+    compatibility: ListingCompatibility
+    created_at: datetime
+
+
+class PendingListingsResponse(BaseModel):
+    items: list[PendingListingSummary]
 
 
 class CompatibleDeviceCategory(BaseModel):

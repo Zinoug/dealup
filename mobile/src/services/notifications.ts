@@ -1,7 +1,11 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { hydrateNotificationAttribution, rememberDailyReminderOpen } from '@/services/notification-attribution';
+import { telemetry } from '@/services/telemetry';
+
 const DAILY_REMINDER_KIND = 'dealup_daily_reminder';
+let lastHandledResponseKey: string | null = null;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -11,6 +15,31 @@ Notifications.setNotificationHandler({
     shouldShowList: true,
   }),
 });
+
+async function trackNotificationResponse(response: Notifications.NotificationResponse | null): Promise<void> {
+  if (!response || response.notification.request.content.data?.kind !== DAILY_REMINDER_KIND) return;
+
+  const notificationDate = response.notification.date;
+  const responseKey = `${response.notification.request.identifier}:${notificationDate}:${response.actionIdentifier}`;
+  if (lastHandledResponseKey === responseKey) return;
+  lastHandledResponseKey = responseKey;
+
+  const openedAt = new Date();
+  const attribution = await rememberDailyReminderOpen(openedAt);
+  telemetry.capture('notification_opened', attribution);
+  await Notifications.clearLastNotificationResponseAsync();
+}
+
+export async function initializeNotificationTracking(): Promise<() => void> {
+  await hydrateNotificationAttribution();
+  const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+    void trackNotificationResponse(response).catch((reason) => {
+      telemetry.error(reason, { operation: 'track_notification_opened' });
+    });
+  });
+  await trackNotificationResponse(await Notifications.getLastNotificationResponseAsync());
+  return () => subscription.remove();
+}
 
 async function replaceDailyReminder(): Promise<void> {
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();

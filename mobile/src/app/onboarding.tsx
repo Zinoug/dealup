@@ -61,7 +61,7 @@ export default function OnboardingScreen() {
 
       {page === 0 ? <AnalysisPreview compact={compact} /> : null}
       {page === 1 ? <ValuePage compact={compact} title="Négocie avec un chiffre, pas au hasard." body="DealUp prépare une offre et une limite avant que tu contactes le vendeur."><PriceComparisonGraphic /></ValuePage> : null}
-      {page === 2 ? <ValuePage compact={compact} title="39 annonces avant de choisir." body="DealUp analyse chacune pour t’aider à conclure beaucoup plus vite."><ResearchSpeedGraphic /></ValuePage> : null}
+      {page === 2 ? <ValuePage compact={compact} title="39 annonces avant de choisir." body="DealUp résume chacune pour t’aider à décider plus vite."><ResearchSpeedGraphic /></ValuePage> : null}
       {page === 3 ? <ValuePage compact={compact} title="Deux lectures. Une décision plus claire." body="La courbe grise reste limitée à l’annonce. DealUp croise le prix, les photos et les preuves."><DecisionClarityGraphic /></ValuePage> : null}
       {page === 4 ? <NotificationPage compact={compact} /> : null}
 

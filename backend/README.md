@@ -75,6 +75,8 @@ Endpoints principaux :
 ```text
 GET    /v1/catalog/compatible-devices
 POST   /v1/listings/identify
+GET    /v1/listings
+GET    /v1/listings/{identification_id}
 POST   /v1/analyses
 GET    /v1/analyses
 GET    /v1/analyses/{id}

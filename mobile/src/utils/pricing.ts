@@ -1,14 +1,14 @@
-import { formatEuros } from '@/utils/format';
+const WEEKS_PER_MONTH = 31 / 7;
 
-export const DISPLAY_PRICES = {
-  monthlyCents: 1299,
-  weeklyCents: 499,
-} as const;
-
-export function monthlyPricePerWeekCents(monthlyCents: number) {
-  return Math.round(monthlyCents / (31 / 7));
+export function monthlyPricePerWeek(monthlyPrice: number) {
+  return Math.round((monthlyPrice / WEEKS_PER_MONTH + Number.EPSILON) * 100) / 100;
 }
 
-export function formatMonthlyPricePerWeek(monthlyCents: number) {
-  return formatEuros(monthlyPricePerWeekCents(monthlyCents), true);
+export function formatMonthlyPricePerWeek(monthlyPrice: number, currencyCode: string) {
+  return new Intl.NumberFormat('fr-FR', {
+    style: 'currency',
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(monthlyPricePerWeek(monthlyPrice));
 }

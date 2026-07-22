@@ -19,7 +19,7 @@ const verdicts: Record<VerdictType, { label: string; color: string }> = {
 };
 
 export default function HistoryScreen() {
-  const { analyses, loadHistory } = useAppStore();
+  const { analyses, loadHistory, openIdentification } = useAppStore();
   const [query, setQuery] = useState('');
   useFocusEffect(useCallback(() => { telemetry.screen('history'); void loadHistory(); }, [loadHistory]));
   const filtered = useMemo(() => analyses.filter((item) => item.listing?.title.toLowerCase().includes(query.toLowerCase())), [analyses, query]);
@@ -30,7 +30,21 @@ export default function HistoryScreen() {
       <View style={styles.search}><Search size={19} color={colors.lightMuted} /><TextInput value={query} onChangeText={setQuery} placeholder="Rechercher un appareil" placeholderTextColor="#8A928C" style={styles.searchInput} accessibilityLabel="Rechercher dans les analyses" /></View>
       <View style={styles.list}>
         {filtered.map((analysis) => {
-          if (!analysis.listing || !analysis.device || !analysis.verdict) return null;
+          if (!analysis.listing || !analysis.device) return null;
+          if (analysis.entryType === 'identification') {
+            return (
+              <Pressable key={analysis.id} onPress={() => void openIdentification(analysis.id).then((listing) => { if (listing) router.push('/listing-preview'); })} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>
+                <DeviceThumbnail uri={analysis.listing.thumbnailUrl} size={78} label={`Première photo de ${analysis.device.displayName}`} />
+                <View style={styles.cardCopy}>
+                  <View style={styles.verdictRow}><View style={[styles.verdictDot, { backgroundColor: colors.brand600 }]} /><Text style={[styles.verdict, { color: colors.brand700 }]}>À analyser</Text></View>
+                  <Text numberOfLines={2} style={styles.product}>{analysis.listing.title}</Text>
+                  <View style={styles.meta}><Text style={styles.price}>{formatEuros(analysis.listing.priceCents)}</Text><Clock3 size={12} color="#8B958F" /><Text style={styles.date}>{new Date(analysis.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</Text></View>
+                </View>
+                <ArrowRight size={18} color="#79847D" />
+              </Pressable>
+            );
+          }
+          if (!analysis.verdict) return null;
           const verdict = verdicts[analysis.verdict.type];
           return (
             <Pressable key={analysis.id} onPress={() => router.push({ pathname: '/analysis/[id]', params: { id: analysis.latestAnalysisId } })} style={({ pressed }) => [styles.card, pressed && styles.pressed]}>

@@ -22,7 +22,7 @@ Read `../AGENTS.md`, `../docs/product/product.md`, and `README.md` before editin
 - External calls never happen inside an open DB transaction.
 - Heavy Gemini analysis never runs in FastAPI.
 - Piloterr identification runs in FastAPI because the teaser precedes the paywall.
-- Device compatibility is decided during identification. Only iPhone 11+/SE 2/3 and MacBook Air/Pro M1+ can reach paywall or quota consumption.
+- Device compatibility is decided during identification. The first free identification rejects unsupported devices before paywall; a second distinct URL from an unsubscribed account is paywalled before Piloterr. Only iPhone 11+/SE 2/3 and MacBook Air/Pro M1+ can consume analysis quota.
 - Public device rules and labels live in `app/domain/contracts.py`; routes never duplicate them.
 - The identification is private to its user and is not a shared cache.
 - New and refreshed analyses reserve quota before Lambda dispatch.

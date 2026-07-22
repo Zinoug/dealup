@@ -43,7 +43,7 @@ DealUp est une aide à la décision, pas une certification. L’application ne g
 | Landing | Présentation de l’app et redirection vers l’App Store |
 | Objectif à six mois | Maximiser le cash-flow net |
 
-La compatibilité est décidée avant le paywall et avant toute consommation de quota. Une annonce non compatible renvoie vers la page des appareils compatibles.
+La première compatibilité d’un compte gratuit est décidée avant le paywall et avant toute consommation de quota. Une annonce non compatible renvoie vers la page des appareils compatibles. Pour protéger le quota Piloterr, un compte sans abonnement actif ne peut lancer qu’une seule nouvelle identification : toute deuxième URL distincte ouvre directement le paywall, sans appel Piloterr.
 
 L’ajout futur d’une catégorie doit rester additif : profil produit, taxonomie, checklist, bloc de prompt, renderer mobile et fixtures contractuelles.
 
@@ -108,6 +108,8 @@ Le teaser peut afficher :
 Il ne montre jamais gratuitement le score, le verdict, l’estimation, les risques détaillés ou les messages vendeur.
 
 L’identification est privée à l’utilisateur. Elle peut servir au teaser, à l’animation d’inspection puis à sa première analyse afin de ne pas doubler l’appel Piloterr. Les URL de prévisualisation ne sont jamais partagées avec un autre utilisateur et ne deviennent jamais des preuves publiques.
+
+Une identification compatible reste visible dans « Tes analyses » tant qu’aucune analyse n’a été lancée, avec l’état « À analyser ». Soumettre de nouveau la même annonce ne rappelle jamais Piloterr pour ce même utilisateur : DealUp rouvre le teaser si elle n’a pas encore été analysée, ou le rapport le plus récent si une analyse existe déjà. Cette déduplication reste strictement privée et ne traverse jamais les comptes.
 
 La structure observée du fournisseur, les règles de normalisation et les champs à exclure sont maintenus dans [`piloterr-payload-reference.md`](piloterr-payload-reference.md).
 
