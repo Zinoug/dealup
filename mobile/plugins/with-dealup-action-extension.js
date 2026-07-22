@@ -58,6 +58,29 @@ function writeActionIconFiles(extensionRoot) {
   }
 }
 
+function addResourceFileToTarget(project, filePath, groupKey, targetKey) {
+  const file = project.addFile(filePath, groupKey);
+  if (!file) return;
+
+  file.uuid = project.generateUuid();
+  file.target = targetKey;
+  project.addToPbxBuildFileSection(file);
+  project.addToPbxResourcesBuildPhase(file);
+}
+
+function findTargetKey(project, name) {
+  return project.findTargetKey(name) || project.findTargetKey(`"${name}"`);
+}
+
+function findGroupKey(project, name) {
+  return (
+    project.findPBXGroupKey({ name }) ||
+    project.findPBXGroupKey({ name: `"${name}"` }) ||
+    project.findPBXGroupKey({ path: name }) ||
+    project.findPBXGroupKey({ path: `"${name}"` })
+  );
+}
+
 /**
  * Expo Sharing generates a standard Share Extension. DealUp intentionally
  * presents the same native hand-off as an iOS Action Extension so Leboncoin
@@ -103,10 +126,10 @@ module.exports = function withDealUpActionExtension(config) {
 
   return withXcodeProject(config, (modConfig) => {
     const project = modConfig.modResults;
-    const targetKey = project.findTargetKey(EXTENSION_TARGET);
+    const targetKey = findTargetKey(project, EXTENSION_TARGET);
     if (!targetKey) throw new Error('DealUp action extension Xcode target not found');
 
-    const extensionGroupKey = project.findPBXGroupKey({ name: EXTENSION_DIRECTORY });
+    const extensionGroupKey = findGroupKey(project, EXTENSION_DIRECTORY);
     if (!extensionGroupKey) throw new Error('DealUp action extension Xcode group not found');
 
     for (const legacyIcon of ['DealUpActionIcon.png', 'DealUpActionIcon@2x.png', 'DealUpActionIcon@3x.png']) {
@@ -115,7 +138,10 @@ module.exports = function withDealUpActionExtension(config) {
     }
 
     if (!project.hasFile(ACTION_ICON_CATALOG)) {
-      project.addResourceFile(ACTION_ICON_CATALOG, { target: targetKey }, extensionGroupKey);
+      // xcode.addResourceFile() assumes that a PBX group named "Resources"
+      // exists. Clean EAS prebuilds do not create that group, so the helper
+      // crashes before it can attach the catalog to the extension target.
+      addResourceFileToTarget(project, ACTION_ICON_CATALOG, extensionGroupKey, targetKey);
     }
 
     project.updateBuildProperty(
