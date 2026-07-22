@@ -41,6 +41,7 @@
         }
       ],
       "expo-image",
+      "./plugins/with-dealup-action-extension",
       [
         "expo-sharing",
         {
@@ -56,7 +57,6 @@
           }
         }
       ],
-      "./plugins/with-dealup-action-extension",
       "expo-secure-store",
       "expo-apple-authentication",
       [
