@@ -70,6 +70,30 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "com.joindealup.app.ShareExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.joindealup.app"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "a141cfa2-8465-4a33-959c-a18fade469c7"
+      }
+    },
+    "owner": "zinoug"
   }
 }

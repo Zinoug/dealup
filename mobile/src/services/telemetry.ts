@@ -9,7 +9,7 @@ type Properties = Record<string, boolean | number | string | null>;
 const posthog = runtime.posthogApiKey
   ? new PostHog(runtime.posthogApiKey, {
       host: runtime.posthogHost,
-      captureAppLifecycleEvents: true,
+      captureAppLifecycleEvents: false,
       enableSessionReplay: false,
     })
   : null;
@@ -27,10 +27,6 @@ export const telemetry = {
     const enrichedProperties = attribution ? { ...properties, ...attribution } : properties;
     posthog?.capture(event, enrichedProperties);
     if (__DEV__ && !posthog) console.info(`[DealUp event] ${event}`, enrichedProperties ?? {});
-  },
-  screen(name: string) {
-    posthog?.screen(name);
-    if (__DEV__ && !posthog) console.info(`[DealUp screen] ${name}`);
   },
   identify(userId: string, properties?: Properties) {
     posthog?.identify(userId, properties);

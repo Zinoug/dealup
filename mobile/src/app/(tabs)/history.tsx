@@ -5,7 +5,6 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { DeviceThumbnail } from '@/components/device-thumbnail';
 import { Screen } from '@/components/screen';
-import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, shadows, spacing, type } from '@/theme/tokens';
 import type { VerdictType } from '@/types/domain';
@@ -21,7 +20,7 @@ const verdicts: Record<VerdictType, { label: string; color: string }> = {
 export default function HistoryScreen() {
   const { analyses, loadHistory, openIdentification } = useAppStore();
   const [query, setQuery] = useState('');
-  useFocusEffect(useCallback(() => { telemetry.screen('history'); void loadHistory(); }, [loadHistory]));
+  useFocusEffect(useCallback(() => { void loadHistory(); }, [loadHistory]));
   const filtered = useMemo(() => analyses.filter((item) => item.listing?.title.toLowerCase().includes(query.toLowerCase())), [analyses, query]);
 
   return (
