@@ -12,7 +12,9 @@ import { runtime } from '@/services/runtime';
 
 const API_URL = runtime.apiUrl;
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
-let tokenProvider: (() => Promise<string | null>) | null = null;
+type TokenProvider = (options?: { skipCache?: boolean }) => Promise<string | null>;
+
+let tokenProvider: TokenProvider | null = null;
 
 export class DealUpApiError extends Error {
   constructor(
@@ -40,15 +42,26 @@ interface UploadPresignResponse {
 
 async function request<T>(path: string, init: RequestInit, token?: string): Promise<T> {
   if (!API_URL) throw new Error('EXPO_PUBLIC_API_URL manque dans le fichier .env.');
-  const bearer = token ?? (tokenProvider ? await tokenProvider() : null);
-  const response = await fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
-      ...init.headers,
-    },
-  });
+  const usesSession = token === undefined;
+  let bearer = usesSession && tokenProvider ? await tokenProvider() : token;
+  if (usesSession && !bearer) {
+    throw new DealUpApiError('Ta session est en cours de restauration.', 'AUTH_TOKEN_UNAVAILABLE', 401);
+  }
+
+  const send = (authorization: string | null | undefined) => fetch(`${API_URL.replace(/\/$/, '')}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authorization ? { Authorization: `Bearer ${authorization}` } : {}),
+        ...init.headers,
+      },
+    });
+
+  let response = await send(bearer);
+  if (response.status === 401 && token !== '' && tokenProvider) {
+    bearer = await tokenProvider({ skipCache: true });
+    if (bearer) response = await send(bearer);
+  }
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       error?: { code?: string; message?: string };
@@ -252,7 +265,7 @@ async function uploadPrivateMediaBatch(uris: string[], token?: string): Promise<
 }
 
 export const dealupApi = {
-  setTokenProvider(provider: (() => Promise<string | null>) | null) {
+  setTokenProvider(provider: TokenProvider | null) {
     tokenProvider = provider;
   },
 

@@ -1,9 +1,9 @@
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react';
 
 import { resetInAppReviewRequestForDevelopment } from '@/services/app-review';
-import { dealupApi } from '@/services/dealup-api';
+import { DealUpApiError, dealupApi } from '@/services/dealup-api';
 import {
   enableDailyReminder,
   forgetRegisteredPushDeviceId,
@@ -137,6 +137,8 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const getTokenRef = useRef(getToken);
+  const initializedUserRef = useRef<string | null>(null);
   const isSignedIn = Boolean(clerkSignedIn && userId);
   const userEmail = user?.primaryEmailAddress?.emailAddress ?? '';
 
@@ -154,9 +156,13 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   }, [persisted, storageReady]);
 
   useEffect(() => {
-    dealupApi.setTokenProvider(isSignedIn ? () => getToken() : null);
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  useEffect(() => {
+    dealupApi.setTokenProvider(isSignedIn ? (options) => getTokenRef.current(options) : null);
     return () => dealupApi.setTokenProvider(null);
-  }, [getToken, isSignedIn]);
+  }, [isSignedIn]);
 
   const loadHistory = useCallback(async () => {
     if (!isSignedIn) return;
@@ -168,7 +174,9 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       setAnalyses([...completed, ...pending].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
     } catch (reason) {
       telemetry.error(reason, { operation: 'load_history' });
-      setError(errorMessage(reason, 'Ton historique n’a pas pu être chargé.'));
+      if (!(reason instanceof DealUpApiError && reason.status === 401)) {
+        setError(errorMessage(reason, 'Ton historique n’a pas pu être chargé.'));
+      }
     }
   }, [isSignedIn]);
 
@@ -215,7 +223,9 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       });
     } catch (reason) {
       telemetry.error(reason, { operation: 'load_account' });
-      await refreshUsage();
+      if (!(reason instanceof DealUpApiError && reason.status === 401)) {
+        await refreshUsage();
+      }
     }
     await history;
   }, [isSignedIn, loadHistory, persisted.onboardingComplete, refreshUsage]);
@@ -225,16 +235,18 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     const pushToken = await getExpoPushTokenIfAuthorized();
     if (!pushToken) return;
     const previousDeviceId = await getRegisteredPushDeviceId();
-    const authToken = await getToken();
+    const authToken = await getTokenRef.current();
+    if (!authToken) return;
     const device = await dealupApi.registerPushDevice(pushToken, authToken ?? undefined);
     await rememberRegisteredPushDeviceId(device.id);
     if (previousDeviceId && previousDeviceId !== device.id) {
       await dealupApi.deletePushDevice(previousDeviceId, authToken ?? undefined).catch(() => undefined);
     }
-  }, [getToken, isSignedIn]);
+  }, [isSignedIn]);
 
   useEffect(() => {
     if (!isSignedIn || !userId) {
+      initializedUserRef.current = null;
       void Promise.resolve().then(() => {
         setAnalyses([]);
         setReports({});
@@ -243,14 +255,31 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       });
       return;
     }
+    if (initializedUserRef.current === userId) return;
+    initializedUserRef.current = userId;
     let active = true;
-    revenueCat.initialize(userId, userEmail)
-      .then(({ products }) => { if (active) setBillingProducts(products); })
-      .catch((reason) => telemetry.error(reason, { operation: 'initialize_revenuecat' }));
-    void Promise.resolve().then(refreshAccount);
-    void syncPushDeviceRegistration().catch((reason) => {
-      telemetry.error(reason, { operation: 'register_push_device' });
-    });
+    const bootstrap = async () => {
+      let token = await getTokenRef.current();
+      for (let attempt = 0; active && !token && attempt < 4; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        token = await getTokenRef.current({ skipCache: true });
+      }
+      if (!active) return;
+      if (!token) {
+        initializedUserRef.current = null;
+        return;
+      }
+      revenueCat.initialize(userId, userEmail)
+        .then(({ products }) => { if (active) setBillingProducts(products); })
+        .catch((reason) => telemetry.error(reason, { operation: 'initialize_revenuecat' }));
+      await Promise.all([
+        refreshAccount(),
+        syncPushDeviceRegistration().catch((reason) => {
+          telemetry.error(reason, { operation: 'register_push_device' });
+        }),
+      ]);
+    };
+    void bootstrap();
     return () => { active = false; };
   }, [isSignedIn, refreshAccount, syncPushDeviceRegistration, userEmail, userId]);
 
@@ -335,10 +364,10 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       // A share extension can cold-open the app while Clerk is still restoring its
       // session. Fetch and pass the token explicitly so the identification cannot
       // race the global API token provider effect.
-      let token = await getToken();
+      let token = await getTokenRef.current();
       for (let attempt = 0; !token && attempt < 4; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 150));
-        token = await getToken();
+        token = await getTokenRef.current({ skipCache: true });
       }
       if (!token) throw new Error('Ta session est en cours de restauration. Réessaie dans un instant.');
       const listing = await dealupApi.identify(url, token);
@@ -375,7 +404,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     } finally {
       setIsBusy(false);
     }
-  }, [getToken, loadHistory]);
+  }, [loadHistory]);
 
   const openIdentification = useCallback(async (id: string) => {
     setIsBusy(true);

@@ -52,10 +52,11 @@ def verify_clerk_token(token: str, settings: Settings) -> AuthenticatedIdentity:
         decode_options["options"] = jwt_options
         claims = jwt.decode(token, signing_key.key, **decode_options)
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
-        if settings.app_env == "local":
-            logger.warning(
-                "Clerk token rejected (%s): %s", type(exc).__name__, exc
-            )
+        logger.warning(
+            "Clerk token rejected error_type=%s environment=%s",
+            type(exc).__name__,
+            settings.app_env,
+        )
         raise DealUpError(
             "AUTHENTICATION_REQUIRED", "Session invalide ou expirée.", 401
         ) from exc
@@ -66,6 +67,10 @@ def verify_clerk_token(token: str, settings: Settings) -> AuthenticatedIdentity:
         and authorized_party
         and authorized_party not in settings.clerk_authorized_parties
     ):
+        logger.warning(
+            "Clerk token rejected error_type=UnauthorizedParty environment=%s",
+            settings.app_env,
+        )
         raise DealUpError(
             "AUTHENTICATION_REQUIRED", "Origine de session non autorisée.", 401
         )
