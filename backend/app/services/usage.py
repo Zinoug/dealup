@@ -16,7 +16,11 @@ from app.repositories import UsageRepository
 from app.schemas.api import TopUpBucket, UsageBucket, UsageResponse
 
 
-PLAN_LIMITS = {SubscriptionPlan.WEEKLY: 15, SubscriptionPlan.MONTHLY: 60}
+PLAN_LIMITS = {
+    SubscriptionPlan.WEEKLY: 15,
+    SubscriptionPlan.MONTHLY: 60,
+    SubscriptionPlan.PROMOTIONAL: 15,
+}
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -47,7 +51,11 @@ class UsageService:
                 409,
             )
         if start is None:
-            days = 7 if subscription.plan == SubscriptionPlan.WEEKLY else 31
+            days = {
+                SubscriptionPlan.WEEKLY: 7,
+                SubscriptionPlan.MONTHLY: 31,
+                SubscriptionPlan.PROMOTIONAL: 1,
+            }.get(subscription.plan, 31)
             start = end - timedelta(days=days)
         if end <= now:
             raise DealUpError(

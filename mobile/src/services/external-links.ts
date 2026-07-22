@@ -4,6 +4,7 @@ export const externalLinks = {
   privacy: 'https://joindealup.com/confidentialite/',
   terms: 'https://joindealup.com/conditions/',
   support: 'https://joindealup.com/support/',
+  subscriptions: 'https://apps.apple.com/account/subscriptions',
 } as const;
 
 export async function openExternalLink(url: string): Promise<boolean> {

@@ -64,6 +64,7 @@ class SubscriptionPlan(str, enum.Enum):
     NONE = "none"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
+    PROMOTIONAL = "promotional"
 
 
 class SubscriptionStatus(str, enum.Enum):
@@ -249,9 +250,7 @@ class RevenueCatEvent(Base):
 
 class Device(Base):
     __tablename__ = "devices"
-    __table_args__ = (
-        UniqueConstraint("user_id", "push_token", name="uq_device_user_token"),
-    )
+    __table_args__ = (UniqueConstraint("push_token", name="uq_device_push_token"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     user_id: Mapped[str] = mapped_column(

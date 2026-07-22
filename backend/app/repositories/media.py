@@ -84,11 +84,10 @@ class DeviceRepository:
 
     def upsert(self, user_id: str, push_token: str, platform: str) -> Device:
         device = self.session.scalar(
-            select(Device).where(
-                Device.user_id == user_id, Device.push_token == push_token
-            )
+            select(Device).where(Device.push_token == push_token)
         )
         if device:
+            device.user_id = user_id
             device.platform = platform
             return device
         device = Device(user_id=user_id, push_token=push_token, platform=platform)

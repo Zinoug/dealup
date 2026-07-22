@@ -47,11 +47,15 @@ class BillingService:
         self.users = UserRepository(session)
         self.usage = UsageRepository(session)
 
-    def _plan(self, product_id: str | None) -> SubscriptionPlan:
+    def _plan(
+        self, product_id: str | None, *, promotional: bool = False
+    ) -> SubscriptionPlan:
         if product_id == self.settings.revenuecat_weekly_product_id:
             return SubscriptionPlan.WEEKLY
         if product_id == self.settings.revenuecat_monthly_product_id:
             return SubscriptionPlan.MONTHLY
+        if promotional or (product_id or "").startswith("rc_promo_"):
+            return SubscriptionPlan.PROMOTIONAL
         return SubscriptionPlan.NONE
 
     def _topup_amount(self, product_id: str | None) -> int | None:
@@ -69,12 +73,16 @@ class BillingService:
         purchased_at: datetime | None,
         period_ends_at: datetime | None,
     ) -> None:
-        if purchased_at is None or plan not in {SubscriptionPlan.WEEKLY, SubscriptionPlan.MONTHLY}:
+        if purchased_at is None or plan not in {
+            SubscriptionPlan.WEEKLY,
+            SubscriptionPlan.MONTHLY,
+            SubscriptionPlan.PROMOTIONAL,
+        }:
             return
         source_id = f"subscription-period:{product_id}:{int(purchased_at.timestamp())}"
         if self.usage.has_source_event(source_id):
             return
-        amount = 15 if plan == SubscriptionPlan.WEEKLY else 60
+        amount = 60 if plan == SubscriptionPlan.MONTHLY else 15
         self.usage.add_event(
             UsageEvent(
                 user_id=user.id,
@@ -155,12 +163,30 @@ class BillingService:
                 )
             )
 
-        plan = self._plan(product_id if isinstance(product_id, str) else None)
+        entitlement_ids = event.get("entitlement_ids")
+        has_expected_entitlement = (
+            isinstance(entitlement_ids, list)
+            and self.settings.revenuecat_entitlement_id in entitlement_ids
+        ) or event.get("entitlement_id") == self.settings.revenuecat_entitlement_id
+        promotional = has_expected_entitlement and (
+            event.get("store") == "PROMOTIONAL"
+            or event.get("period_type") == "PROMOTIONAL"
+            or (isinstance(product_id, str) and product_id.startswith("rc_promo_"))
+        )
+        plan = self._plan(
+            product_id if isinstance(product_id, str) else None,
+            promotional=promotional,
+        )
         if user and plan != SubscriptionPlan.NONE:
             subscription = self.repo.get_or_create_subscription(user.id)
             purchased_at = _from_ms(event.get("purchased_at_ms"))
             expires_at = _from_ms(event.get("expiration_at_ms"))
-            if event_type in {"INITIAL_PURCHASE", "RENEWAL", "PRODUCT_CHANGE"}:
+            if event_type in {
+                "INITIAL_PURCHASE",
+                "RENEWAL",
+                "PRODUCT_CHANGE",
+                "NON_RENEWING_PURCHASE",
+            }:
                 self._grant_subscription_credit(
                     user,
                     plan,
@@ -190,10 +216,10 @@ class BillingService:
                 subscription.will_renew = False
             else:
                 subscription.status = SubscriptionStatus.ACTIVE
-                subscription.will_renew = event_type not in {
-                    "CANCELLATION",
-                    "EXPIRATION",
-                }
+                subscription.will_renew = (
+                    plan != SubscriptionPlan.PROMOTIONAL
+                    and event_type not in {"CANCELLATION", "EXPIRATION"}
+                )
 
         self.repo.add_event(
             RevenueCatEvent(
@@ -278,10 +304,14 @@ class BillingService:
         subscription.status = (
             SubscriptionStatus.ACTIVE if active else SubscriptionStatus.INACTIVE
         )
-        subscription.will_renew = active and not bool(
-            entitlement.get("unsubscribe_detected_at")
-            if isinstance(entitlement, dict)
-            else None
+        subscription.will_renew = (
+            active
+            and plan != SubscriptionPlan.PROMOTIONAL
+            and not bool(
+                entitlement.get("unsubscribe_detected_at")
+                if isinstance(entitlement, dict)
+                else None
+            )
         )
         self.session.commit()
         usage = UsageService(self.session).snapshot(user)

@@ -43,6 +43,22 @@ class FakeActiveWeeklyRevenueCat:
         }
 
 
+class FakePromotionalRevenueCat:
+    def get_subscriber(self, app_user_id: str) -> dict:
+        return {
+            "subscriber": {
+                "entitlements": {
+                    get_settings().revenuecat_entitlement_id: {
+                        "product_identifier": "rc_promo_DealUp AI Pro_daily",
+                        "purchase_date": "2026-07-22T17:31:23Z",
+                        "expires_date": "2099-07-23T17:31:23Z",
+                    }
+                },
+                "non_subscriptions": {},
+            }
+        }
+
+
 def test_revenuecat_topup_webhook_is_idempotent(client) -> None:
     client.get("/v1/me")
     payload = {
@@ -118,3 +134,52 @@ def test_revenuecat_sync_grants_current_subscription_period_once(client) -> None
             assert credits[0].amount == 15
     finally:
         app.dependency_overrides.clear()
+
+
+def test_revenuecat_promotional_entitlement_grants_15_credits_once(client) -> None:
+    from app.main import app
+
+    app.dependency_overrides[revenuecat_dependency] = lambda: FakePromotionalRevenueCat()
+    try:
+        client.get("/v1/me")
+        first = client.post("/v1/billing/sync")
+        second = client.post("/v1/billing/sync")
+        assert first.status_code == 200, first.text
+        assert second.status_code == 200, second.text
+        usage = client.get("/v1/me/usage").json()
+        assert usage["plan"] == "promotional"
+        assert usage["included"]["remaining"] == 15
+        with session_factory()() as session:
+            credits = (
+                session.query(UsageEvent)
+                .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+                .all()
+            )
+            assert len(credits) == 1
+            assert credits[0].amount == 15
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_revenuecat_promotional_webhook_grants_15_credits(client) -> None:
+    client.get("/v1/me")
+    payload = {
+        "api_version": "1.0",
+        "event": {
+            "id": "promo-event-1",
+            "type": "NON_RENEWING_PURCHASE",
+            "store": "PROMOTIONAL",
+            "period_type": "PROMOTIONAL",
+            "app_user_id": "user_local_dealup",
+            "product_id": "rc_promo_DealUp AI Pro_daily",
+            "entitlement_id": get_settings().revenuecat_entitlement_id,
+            "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+            "purchased_at_ms": 1784734283249,
+            "expiration_at_ms": 1784820683249,
+        },
+    }
+    response = client.post("/v1/webhooks/revenuecat", json=payload)
+    assert response.status_code == 200, response.text
+    usage = client.get("/v1/me/usage").json()
+    assert usage["plan"] == "promotional"
+    assert usage["included"]["remaining"] == 15

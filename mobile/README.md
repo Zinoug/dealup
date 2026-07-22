@@ -33,7 +33,7 @@ Si l’app affiche `No script URL provided`, Metro n’est pas lancé ou le buil
 - PostHog : UUID interne `/v1/me`, e-mail et fournisseur comme propriétés de personne, événements sans contenu privé ;
 - Sentry : erreurs sans PII explicite ;
 - historique, quota, rapports et photos : chargés depuis l’API au lancement.
-- rappel local iOS : proposé après une première inscription, réactivable dans « Ton espace » et planifié chaque jour à 18 h 30 directement par l’appareil ; aucun push n’est envoyé par le worker.
+- notifications : le rappel quotidien reste local à l’iPhone et aucun push n’est encore envoyé par le serveur ; après autorisation iOS, l’app enregistre néanmoins son token Expo auprès de FastAPI afin de préparer de futurs push distants.
 
 Les outils de développement sont contrôlés par `EXPO_PUBLIC_DEV_TOOLS`. Ils donnent accès aux huit fixtures visuelles et ajoutent sur un vrai rapport le bouton « Revoir l’animation d’analyse ». Ce replay relit les photos privées déjà archivées et le rapport localement ; il ne crée aucun job, n’appelle ni Piloterr ni Gemini et ne consomme aucun quota. En preview et production, ces outils sont désactivés.
 

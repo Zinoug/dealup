@@ -27,6 +27,8 @@ Read `../AGENTS.md`, `README.md`, `../docs/product/product.md`, `../DESIGN.md`, 
 ## UI rules
 
 - Design for iPhone first. Respect safe areas and 44 pt minimum touch targets.
+- Every light surface or sheet must use the explicit light text and border tokens (`lightInk`, `lightMuted`, `lightBorder`). Never reuse the white/dark-screen `ink` tokens on a light surface. Text, icons, controls, and destructive actions must remain legible at a glance.
+- Tab screens using the floating native navigation bar must reserve enough bottom content padding for the full bar and safe area. No footer, primary action, settings entry, or legal link may sit underneath the navigation bar.
 - Use the system font, DealUp tokens, and French tutoiement.
 - Do not add generic AI imagery, robots, purple gradients, nested cards, fake urgency, or casino mechanics around payment.
 - Dopamine belongs to score/verdict/savings reveal, with restrained haptics and reduced-motion support.

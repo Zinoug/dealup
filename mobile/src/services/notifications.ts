@@ -1,10 +1,14 @@
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 import { hydrateNotificationAttribution, rememberDailyReminderOpen } from '@/services/notification-attribution';
 import { telemetry } from '@/services/telemetry';
 
 const DAILY_REMINDER_KIND = 'dealup_daily_reminder';
+const DAILY_REMINDER_PREFERENCE_KEY = 'dealup.daily-reminder.preference';
+const PUSH_DEVICE_ID_KEY = 'dealup.push-device-id';
 let lastHandledResponseKey: string | null = null;
 
 Notifications.setNotificationHandler({
@@ -62,8 +66,26 @@ async function replaceDailyReminder(): Promise<void> {
   });
 }
 
+export async function isDailyReminderEnabled(): Promise<boolean> {
+  if (Platform.OS !== 'ios') return false;
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  return scheduled.some((item) => item.content.data?.kind === DAILY_REMINDER_KIND);
+}
+
+export async function disableDailyReminder(): Promise<void> {
+  if (Platform.OS !== 'ios') return;
+  await AsyncStorage.setItem(DAILY_REMINDER_PREFERENCE_KEY, 'disabled');
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  await Promise.all(
+    scheduled
+      .filter((item) => item.content.data?.kind === DAILY_REMINDER_KIND)
+      .map((item) => Notifications.cancelScheduledNotificationAsync(item.identifier)),
+  );
+}
+
 export async function ensureDailyReminderIfAuthorized(): Promise<void> {
   if (Platform.OS !== 'ios') return;
+  if (await AsyncStorage.getItem(DAILY_REMINDER_PREFERENCE_KEY) === 'disabled') return;
   const permission = await Notifications.getPermissionsAsync();
   if (!permission.granted) return;
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -83,5 +105,37 @@ export async function enableDailyReminder(): Promise<'enabled' | 'denied' | 'una
   if (!permission.granted) return 'denied';
 
   await replaceDailyReminder();
+  await AsyncStorage.setItem(DAILY_REMINDER_PREFERENCE_KEY, 'enabled');
   return 'enabled';
+}
+
+function easProjectId(): string | null {
+  return (
+    Constants.easConfig?.projectId
+    ?? Constants.expoConfig?.extra?.eas?.projectId
+    ?? process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+    ?? null
+  );
+}
+
+export async function getExpoPushTokenIfAuthorized(): Promise<string | null> {
+  if (Platform.OS !== 'ios') return null;
+  const permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted) return null;
+  const projectId = easProjectId();
+  if (!projectId) return null;
+  const token = await Notifications.getExpoPushTokenAsync({ projectId });
+  return token.data || null;
+}
+
+export async function getRegisteredPushDeviceId(): Promise<string | null> {
+  return AsyncStorage.getItem(PUSH_DEVICE_ID_KEY);
+}
+
+export async function rememberRegisteredPushDeviceId(deviceId: string): Promise<void> {
+  await AsyncStorage.setItem(PUSH_DEVICE_ID_KEY, deviceId);
+}
+
+export async function forgetRegisteredPushDeviceId(): Promise<void> {
+  await AsyncStorage.removeItem(PUSH_DEVICE_ID_KEY);
 }

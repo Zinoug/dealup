@@ -437,6 +437,18 @@ export const dealupApi = {
     await request('/v1/billing/sync', { method: 'POST', body: JSON.stringify({}) }, token);
   },
 
+  async registerPushDevice(pushToken: string, token?: string): Promise<{ id: string }> {
+    return request<{ id: string }>(
+      '/v1/devices',
+      { method: 'POST', body: JSON.stringify({ push_token: pushToken, platform: 'ios' }) },
+      token,
+    );
+  },
+
+  async deletePushDevice(deviceId: string, token?: string): Promise<void> {
+    await request(`/v1/devices/${deviceId}`, { method: 'DELETE' }, token);
+  },
+
   async getAnalysisMedia(id: string, token?: string): Promise<{ listing: string[]; seller: string[] }> {
     const raw = await request<any>(`/v1/analyses/${id}/media`, { method: 'GET' }, token);
     return {

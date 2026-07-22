@@ -92,7 +92,7 @@ npx expo start --dev-client
 
 Pour le simulateur iOS, `EXPO_PUBLIC_API_URL=http://localhost:8000` fonctionne. Sur un iPhone physique, utilise l’adresse LAN du Mac, par exemple `http://192.168.1.20:8000`, et lance Uvicorn avec `--host 0.0.0.0`.
 
-Le rappel quotidien est une notification locale iOS. Il ne dépend ni d’EAS, ni d’un token Expo Push, ni du worker. Sur un iPhone, accepte la demande en fin d’onboarding puis vérifie dans « Ton espace » que le rappel peut être activé de nouveau.
+Le rappel quotidien reste une notification locale iOS et ne dépend pas du worker. Après autorisation iOS, l’app enregistre aussi un token Expo Push dans FastAPI pour préparer de futurs push distants, sans en envoyer actuellement. Sur un iPhone, accepte la demande en fin d’onboarding puis vérifie dans « Ton espace » que les notifications peuvent être réactivées.
 
 ## 2. Clerk
 
@@ -246,6 +246,7 @@ Après `eas init`, crée les variables de chaque environnement. Exemple de noms 
 
 ```text
 EXPO_PUBLIC_API_URL
+EXPO_PUBLIC_EAS_PROJECT_ID
 EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
 EXPO_PUBLIC_REVENUECAT_IOS_API_KEY
 EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID

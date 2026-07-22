@@ -123,6 +123,8 @@ Dependency direction is transport → service → repository/integration. Reposi
 
 Mobile flow: auth → onboarding de valeur pour les nouveaux comptes → choix facultatif du rappel local quotidien → URL/share → compatibility → private Piloterr teaser → purchase mode → seller context → hard paywall when needed on the final launch action → analysis → report → reanalysis/history/profile.
 
+Mobile light surfaces must use dedicated dark-on-light tokens and pass a basic contrast check; never place the dark-theme white text tokens on ivory or white sheets. Floating native tab bars are overlays: every tab screen must reserve enough bottom space so its final action and footer remain fully visible and tappable.
+
 The report is one scrollable screen with four deterministic section orders (`BUY`, `NEGOTIATE`, `VERIFY_FIRST`, `PASS`) and category-specific checklist content.
 
 The landing only presents the app and sends users to the App Store. Do not add a web analyzer, waitlist, referral system, or unrelated SEO product without an explicit request.

@@ -4,7 +4,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { resetInAppReviewRequestForDevelopment } from '@/services/app-review';
 import { dealupApi } from '@/services/dealup-api';
-import { enableDailyReminder } from '@/services/notifications';
+import {
+  enableDailyReminder,
+  forgetRegisteredPushDeviceId,
+  getExpoPushTokenIfAuthorized,
+  getRegisteredPushDeviceId,
+  rememberRegisteredPushDeviceId,
+} from '@/services/notifications';
 import { revenueCat, type BillingProducts, type TopUpQuantity } from '@/services/revenuecat';
 import { telemetry } from '@/services/telemetry';
 import type {
@@ -155,19 +161,10 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const loadHistory = useCallback(async () => {
     if (!isSignedIn) return;
     try {
-      const [completedResult, pendingResult] = await Promise.allSettled([
+      const [completed, pending] = await Promise.all([
         dealupApi.listAnalyses(),
         dealupApi.listPendingIdentifications(),
       ]);
-
-      if (completedResult.status === 'rejected') throw completedResult.reason;
-
-      const pending = pendingResult.status === 'fulfilled' ? pendingResult.value : [];
-      if (pendingResult.status === 'rejected') {
-        telemetry.error(pendingResult.reason, { operation: 'load_pending_identifications' });
-      }
-
-      const completed = completedResult.value;
       setAnalyses([...completed, ...pending].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
     } catch (reason) {
       telemetry.error(reason, { operation: 'load_history' });
@@ -223,6 +220,19 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     await history;
   }, [isSignedIn, loadHistory, persisted.onboardingComplete, refreshUsage]);
 
+  const syncPushDeviceRegistration = useCallback(async () => {
+    if (!isSignedIn) return;
+    const pushToken = await getExpoPushTokenIfAuthorized();
+    if (!pushToken) return;
+    const previousDeviceId = await getRegisteredPushDeviceId();
+    const authToken = await getToken();
+    const device = await dealupApi.registerPushDevice(pushToken, authToken ?? undefined);
+    await rememberRegisteredPushDeviceId(device.id);
+    if (previousDeviceId && previousDeviceId !== device.id) {
+      await dealupApi.deletePushDevice(previousDeviceId, authToken ?? undefined).catch(() => undefined);
+    }
+  }, [getToken, isSignedIn]);
+
   useEffect(() => {
     if (!isSignedIn || !userId) {
       void Promise.resolve().then(() => {
@@ -238,8 +248,11 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       .then(({ products }) => { if (active) setBillingProducts(products); })
       .catch((reason) => telemetry.error(reason, { operation: 'initialize_revenuecat' }));
     void Promise.resolve().then(refreshAccount);
+    void syncPushDeviceRegistration().catch((reason) => {
+      telemetry.error(reason, { operation: 'register_push_device' });
+    });
     return () => { active = false; };
-  }, [isSignedIn, refreshAccount, userEmail, userId]);
+  }, [isSignedIn, refreshAccount, syncPushDeviceRegistration, userEmail, userId]);
 
   const completeOnboarding = useCallback(() => {
     telemetry.capture('onboarding_completed');
@@ -254,17 +267,25 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
   const requestNotifications = useCallback(async () => {
     try {
       const result = await enableDailyReminder();
+      if (result === 'enabled') await syncPushDeviceRegistration();
       telemetry.capture('notification_permission_finished', { result });
       return result;
     } catch (reason) {
       telemetry.error(reason, { operation: 'enable_notifications' });
       return 'unavailable' as const;
     }
-  }, []);
+  }, [syncPushDeviceRegistration]);
 
   const signOut = useCallback(async () => {
     setIsBusy(true);
     try {
+      const deviceId = await getRegisteredPushDeviceId();
+      if (deviceId) {
+        await dealupApi.deletePushDevice(deviceId).catch((reason) => {
+          telemetry.error(reason, { operation: 'unregister_push_device' });
+        });
+        await forgetRegisteredPushDeviceId();
+      }
       await revenueCat.logout();
       await clerkSignOut();
       telemetry.reset();
@@ -289,6 +310,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       telemetry.capture('account_deleted');
       telemetry.reset();
       await AsyncStorage.removeItem(STORAGE_KEY);
+      await forgetRegisteredPushDeviceId();
       setPersisted(initialPersisted);
       setIdentification(null);
       setPendingUrl(null);

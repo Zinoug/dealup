@@ -134,7 +134,7 @@ export interface CompatibleDevicesCatalog {
 }
 
 export interface Usage {
-  plan: PlanId | 'none';
+  plan: PlanId | 'promotional' | 'none';
   active: boolean;
   used: number;
   limit: number;

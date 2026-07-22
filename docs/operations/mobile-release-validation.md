@@ -20,14 +20,14 @@ Légende :
 - [ ] Mensuel sélectionné par défaut ; Hebdomadaire disponible en second.
 - [ ] Recharge de **40 analyses** sélectionnée par défaut ; recharge de 15 disponible.
 - [ ] Conserver le prix mensuel ramené à la semaine comme prix principal malgré le risque App Review décrit plus bas.
-- [ ] Aucun push serveur pour la V1 ; seulement le rappel local iOS.
+- [ ] Aucun push serveur pour la V1 ; le rappel reste local, mais le token Expo est enregistré dans l’API pour préparer une activation ultérieure.
 - [ ] Outils développeur absents des builds preview et production.
 
 ## 2. Notification quotidienne
 
 ### Comportement actuel
 
-✅ La notification est **locale** : elle est programmée par iOS et ne passe ni par Expo Push, ni par FastAPI, ni par la Lambda.
+✅ Le rappel est **local** : il est programmé par iOS et ne passe ni par FastAPI ni par la Lambda. Après consentement, le token Expo Push est toutefois enregistré dans l’API ; aucun service ne l’utilise encore pour envoyer une notification distante.
 
 | Élément | Valeur actuelle |
 | --- | --- |
