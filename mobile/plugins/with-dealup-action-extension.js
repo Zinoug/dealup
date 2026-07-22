@@ -100,10 +100,9 @@ function ensureActionIconCopyPhase(project, targetKey) {
   const outputPaths = ACTION_ICON_FILES.map(([, bundleFilename]) => (
     `"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/${bundleFilename}"`
   ));
-  const copyCommands = ACTION_ICON_FILES.map(([, bundleFilename], index) => (
-    `/usr/bin/install -m 0644 \"$SCRIPT_INPUT_FILE_${index}\" ` +
-    `\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${bundleFilename}\" && ` +
-    `/usr/bin/test -s \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${bundleFilename}\"`
+  const copyCommands = ACTION_ICON_FILES.map((_file, index) => (
+    `/bin/cp -f \"$SCRIPT_INPUT_FILE_${index}\" \"$SCRIPT_OUTPUT_FILE_${index}\" && ` +
+    `/usr/bin/test -s \"$SCRIPT_OUTPUT_FILE_${index}\"`
   ));
 
   project.addBuildPhase(
@@ -117,7 +116,6 @@ function ensureActionIconCopyPhase(project, targetKey) {
       outputPaths,
       shellScript: [
         'set -e',
-        '/bin/mkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"',
         ...copyCommands,
       ].join('\n'),
     },
