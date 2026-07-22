@@ -33,14 +33,57 @@ function writeActionIconFiles(extensionRoot) {
   }
 }
 
-function addResourceFileToTarget(project, filePath, groupKey, targetKey) {
-  const file = project.addFile(filePath, groupKey);
-  if (!file) return;
+function unquote(value) {
+  return typeof value === 'string' ? value.replace(/^"|"$/g, '') : value;
+}
 
-  file.uuid = project.generateUuid();
-  file.target = targetKey;
-  project.addToPbxBuildFileSection(file);
-  project.addToPbxResourcesBuildPhase(file);
+function findFileReference(project, filePath) {
+  const references = project.pbxFileReferenceSection();
+  for (const [key, reference] of Object.entries(references)) {
+    if (key.endsWith('_comment')) continue;
+    if (
+      unquote(reference.path) === filePath ||
+      unquote(reference.name) === filePath
+    ) {
+      return { key, reference };
+    }
+  }
+  return null;
+}
+
+function ensureResourceFileInTarget(project, filePath, groupKey, targetKey) {
+  let fileReference = findFileReference(project, filePath);
+  if (!fileReference) {
+    const file = project.addFile(filePath, groupKey);
+    if (!file) {
+      throw new Error(`Unable to add ${filePath} to the action extension group`);
+    }
+    fileReference = { key: file.fileRef };
+  }
+
+  const resourcesPhase = project.pbxResourcesBuildPhaseObj(targetKey);
+  if (!resourcesPhase) {
+    throw new Error('DealUp action extension Resources build phase not found');
+  }
+
+  const buildFiles = project.pbxBuildFileSection();
+  const isAlreadyInResources = resourcesPhase.files.some(({ value }) => {
+    const buildFile = buildFiles[value];
+    return buildFile?.fileRef === fileReference.key;
+  });
+  if (isAlreadyInResources) return;
+
+  const buildFileKey = project.generateUuid();
+  buildFiles[buildFileKey] = {
+    isa: 'PBXBuildFile',
+    fileRef: fileReference.key,
+    fileRef_comment: filePath,
+  };
+  buildFiles[`${buildFileKey}_comment`] = `${filePath} in Resources`;
+  resourcesPhase.files.push({
+    value: buildFileKey,
+    comment: `${filePath} in Resources`,
+  });
 }
 
 function findTargetKey(project, name) {
@@ -114,14 +157,12 @@ module.exports = function withDealUpActionExtension(config) {
     if (!extensionGroupKey) throw new Error('DealUp action extension Xcode group not found');
 
     for (const [, bundleFilename] of ACTION_ICON_FILES) {
-      if (!project.hasFile(bundleFilename)) {
-        addResourceFileToTarget(
-          project,
-          bundleFilename,
-          extensionGroupKey,
-          targetKey,
-        );
-      }
+      ensureResourceFileInTarget(
+        project,
+        bundleFilename,
+        extensionGroupKey,
+        targetKey,
+      );
     }
     return modConfig;
   });
