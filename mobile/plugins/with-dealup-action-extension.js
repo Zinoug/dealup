@@ -95,10 +95,10 @@ function ensureActionIconCopyPhase(project, targetKey) {
   if (existingPhase) return;
 
   const inputPaths = ACTION_ICON_FILES.map(([sourceFilename]) => (
-    `$(PROJECT_DIR)/../assets/brands/${sourceFilename}`
+    `"$(PROJECT_DIR)/../assets/brands/${sourceFilename}"`
   ));
   const outputPaths = ACTION_ICON_FILES.map(([, bundleFilename]) => (
-    `$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/${bundleFilename}`
+    `"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/${bundleFilename}"`
   ));
   const copyCommands = ACTION_ICON_FILES.map(([, bundleFilename], index) => (
     `/usr/bin/install -m 0644 \"$SCRIPT_INPUT_FILE_${index}\" ` +
