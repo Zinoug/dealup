@@ -7,52 +7,30 @@ const plist = require('@expo/plist').default;
 const EXTENSION_DIRECTORY = 'expo-sharing-extension';
 const EXTENSION_TARGET = 'expo-sharing-extension';
 const ACTION_ICON_CATALOG = 'ActionIcon.xcassets';
-const ACTION_ICON_IMAGESET = 'DealUpActionIcon.imageset';
 const ACTION_ICON_FILES = [
-  ['dealup-action-icon-40.png', 'dealup-action-icon-40.png', '1x'],
-  ['dealup-action-icon-80.png', 'dealup-action-icon-80.png', '2x'],
-  ['dealup-action-icon-120.png', 'dealup-action-icon-120.png', '3x'],
+  ['dealup-action-icon-40.png', 'DealUpActionIcon.png'],
+  ['dealup-action-icon-80.png', 'DealUpActionIcon@2x.png'],
+  ['dealup-action-icon-120.png', 'DealUpActionIcon@3x.png'],
 ];
 
 function writeActionIconFiles(extensionRoot) {
   const sourceRoot = path.resolve(__dirname, '..', 'assets', 'brands');
-  const catalogRoot = path.join(extensionRoot, ACTION_ICON_CATALOG);
-  const imageSetRoot = path.join(catalogRoot, ACTION_ICON_IMAGESET);
 
-  // This must remain a regular template imageset, not an appiconset: App Store
-  // distribution flattens app icons and would turn the glyph into a solid box.
-  fs.rmSync(catalogRoot, { recursive: true, force: true });
-  fs.mkdirSync(imageSetRoot, { recursive: true });
+  // Do not pass this icon through an app icon catalog. App Store processing
+  // flattens app icons and makes iOS display a shaded copy of the main icon.
+  // Loose bundle resources preserve the monochrome alpha mask exactly.
+  fs.rmSync(path.join(extensionRoot, ACTION_ICON_CATALOG), {
+    recursive: true,
+    force: true,
+  });
 
-  fs.writeFileSync(
-    path.join(catalogRoot, 'Contents.json'),
-    `${JSON.stringify({ info: { author: 'xcode', version: 1 } }, null, 2)}\n`,
-  );
-
-  for (const [sourceFilename, outputFilename] of ACTION_ICON_FILES) {
+  for (const [sourceFilename, bundleFilename] of ACTION_ICON_FILES) {
     const source = path.join(sourceRoot, sourceFilename);
     if (!fs.existsSync(source)) {
       throw new Error(`DealUp action icon asset not found at ${source}`);
     }
-    fs.copyFileSync(source, path.join(imageSetRoot, outputFilename));
+    fs.copyFileSync(source, path.join(extensionRoot, bundleFilename));
   }
-
-  fs.writeFileSync(
-    path.join(imageSetRoot, 'Contents.json'),
-    `${JSON.stringify(
-      {
-        images: ACTION_ICON_FILES.map(([, filename, scale]) => ({
-          filename,
-          idiom: 'universal',
-          scale,
-        })),
-        info: { author: 'xcode', version: 1 },
-        properties: { 'template-rendering-intent': 'template' },
-      },
-      null,
-      2,
-    )}\n`,
-  );
 }
 
 function addResourceFileToTarget(project, filePath, groupKey, targetKey) {
@@ -104,8 +82,9 @@ module.exports = function withDealUpActionExtension(config) {
 
       const info = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
       info.CFBundleDisplayName = 'Analyser avec DealUp';
-      delete info.CFBundleIconFile;
+      info.CFBundleIconFile = 'DealUpActionIcon.png';
       info.CFBundleIconFiles = ['DealUpActionIcon'];
+      info.UIPrerenderedIcon = true;
       info.CFBundleIcons = {
         CFBundlePrimaryIcon: {
           CFBundleIconFiles: ['DealUpActionIcon'],
@@ -134,13 +113,15 @@ module.exports = function withDealUpActionExtension(config) {
     const extensionGroupKey = findGroupKey(project, EXTENSION_DIRECTORY);
     if (!extensionGroupKey) throw new Error('DealUp action extension Xcode group not found');
 
-    if (!project.hasFile(ACTION_ICON_CATALOG)) {
-      addResourceFileToTarget(
-        project,
-        ACTION_ICON_CATALOG,
-        extensionGroupKey,
-        targetKey,
-      );
+    for (const [, bundleFilename] of ACTION_ICON_FILES) {
+      if (!project.hasFile(bundleFilename)) {
+        addResourceFileToTarget(
+          project,
+          bundleFilename,
+          extensionGroupKey,
+          targetKey,
+        );
+      }
     }
     return modConfig;
   });
