@@ -7,6 +7,7 @@ const plist = require('@expo/plist').default;
 const EXTENSION_DIRECTORY = 'expo-sharing-extension';
 const EXTENSION_TARGET = 'expo-sharing-extension';
 const ACTION_ICON_CATALOG = 'ActionIcon.xcassets';
+const ACTION_ICON_COPY_PHASE = 'Copy DealUp Action Icon';
 const ACTION_ICON_FILES = [
   ['dealup-action-icon-40.png', 'DealUpActionIcon.png'],
   ['dealup-action-icon-80.png', 'DealUpActionIcon@2x.png'],
@@ -84,6 +85,43 @@ function ensureResourceFileInTarget(project, filePath, groupKey, targetKey) {
     value: buildFileKey,
     comment: `${filePath} in Resources`,
   });
+}
+
+function ensureActionIconCopyPhase(project, targetKey) {
+  const shellPhases = project.hash.project.objects.PBXShellScriptBuildPhase || {};
+  const existingPhase = Object.entries(shellPhases).find(([key, phase]) => (
+    !key.endsWith('_comment') && unquote(phase.name) === ACTION_ICON_COPY_PHASE
+  ));
+  if (existingPhase) return;
+
+  const inputPaths = ACTION_ICON_FILES.map(([sourceFilename]) => (
+    `$(PROJECT_DIR)/../assets/brands/${sourceFilename}`
+  ));
+  const outputPaths = ACTION_ICON_FILES.map(([, bundleFilename]) => (
+    `$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/${bundleFilename}`
+  ));
+  const copyCommands = ACTION_ICON_FILES.map(([, bundleFilename], index) => (
+    `/usr/bin/install -m 0644 \"$SCRIPT_INPUT_FILE_${index}\" ` +
+    `\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${bundleFilename}\" && ` +
+    `/usr/bin/test -s \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/${bundleFilename}\"`
+  ));
+
+  project.addBuildPhase(
+    [],
+    'PBXShellScriptBuildPhase',
+    ACTION_ICON_COPY_PHASE,
+    targetKey,
+    {
+      shellPath: '/bin/sh',
+      inputPaths,
+      outputPaths,
+      shellScript: [
+        'set -e',
+        '/bin/mkdir -p \"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"',
+        ...copyCommands,
+      ].join('\n'),
+    },
+  );
 }
 
 function findTargetKey(project, name) {
@@ -164,6 +202,7 @@ module.exports = function withDealUpActionExtension(config) {
         targetKey,
       );
     }
+    ensureActionIconCopyPhase(project, targetKey);
     return modConfig;
   });
 };
