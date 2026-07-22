@@ -101,8 +101,7 @@ function ensureActionIconCopyPhase(project, targetKey) {
     `"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/${bundleFilename}"`
   ));
   const copyCommands = ACTION_ICON_FILES.map((_file, index) => (
-    `/bin/cp -f \"$SCRIPT_INPUT_FILE_${index}\" \"$SCRIPT_OUTPUT_FILE_${index}\" && ` +
-    `/usr/bin/test -s \"$SCRIPT_OUTPUT_FILE_${index}\"`
+    `/bin/cp -f \"$SCRIPT_INPUT_FILE_${index}\" \"$SCRIPT_OUTPUT_FILE_${index}\"`
   ));
 
   project.addBuildPhase(
