@@ -72,6 +72,31 @@ def _revenuecat_user_ids(event: dict[str, Any]) -> list[str]:
     return result
 
 
+def _revenuecat_transfer_ids(event: dict[str, Any], key: str) -> list[str]:
+    values = event.get(key)
+    if not isinstance(values, list):
+        return []
+    result: list[str] = []
+    for value in values:
+        if (
+            isinstance(value, str)
+            and value
+            and not value.startswith("$RCAnonymousID:")
+            and value not in result
+        ):
+            result.append(value)
+    return result
+
+
+def _transaction_ids(transaction: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for key in ("transaction_id", "store_transaction_id", "id"):
+        value = transaction.get(key)
+        if isinstance(value, str) and value and value not in result:
+            result.append(value)
+    return result
+
+
 class BillingService:
     def __init__(
         self, session: Session, settings: Settings, client: RevenueCatClient
@@ -116,19 +141,126 @@ class BillingService:
         }:
             return
         source_id = f"subscription-period:{product_id}:{int(purchased_at.timestamp())}"
-        if self.usage.has_source_event(source_id):
+        existing_credit = self.usage.get_source_event(source_id)
+        if existing_credit is None:
+            amount = 60 if plan == SubscriptionPlan.MONTHLY else 15
+            self.usage.add_event(
+                UsageEvent(
+                    user_id=user.id,
+                    kind=UsageEventKind.INCLUDED_CREDIT,
+                    amount=amount,
+                    source_event_id=source_id,
+                    period_started_at=purchased_at,
+                    period_ends_at=period_ends_at,
+                )
+            )
             return
-        amount = 60 if plan == SubscriptionPlan.MONTHLY else 15
+
+        if (
+            existing_credit.user_id == user.id
+            or period_ends_at is None
+            or existing_credit.period_ends_at is None
+        ):
+            return
+
+        remaining = self.usage.included_period_balance(
+            existing_credit.user_id,
+            existing_credit.period_started_at or purchased_at,
+            existing_credit.period_ends_at,
+        )
+        if remaining <= 0:
+            return
+        transfer_key = hashlib.sha256(f"{source_id}:{user.id}".encode()).hexdigest()[
+            :24
+        ]
+        outgoing_source = f"subscription-reassignment:{transfer_key}:out"
+        incoming_source = f"subscription-reassignment:{transfer_key}:in"
+        if self.usage.has_source_event(incoming_source):
+            return
+        self.usage.add_event(
+            UsageEvent(
+                user_id=existing_credit.user_id,
+                kind=UsageEventKind.INCLUDED_DEBIT,
+                amount=-remaining,
+                source_event_id=outgoing_source,
+                period_started_at=existing_credit.period_started_at or purchased_at,
+                period_ends_at=existing_credit.period_ends_at,
+            )
+        )
         self.usage.add_event(
             UsageEvent(
                 user_id=user.id,
                 kind=UsageEventKind.INCLUDED_CREDIT,
-                amount=amount,
-                source_event_id=source_id,
+                amount=remaining,
+                source_event_id=incoming_source,
                 period_started_at=purchased_at,
                 period_ends_at=period_ends_at,
             )
         )
+
+    def _process_transfer(self, event: dict[str, Any], event_id: str) -> str | None:
+        target_ids = _revenuecat_transfer_ids(event, "transferred_to")
+        source_ids = _revenuecat_transfer_ids(event, "transferred_from")
+        if not target_ids:
+            return None
+
+        target, _ = self.users.get_or_create(target_ids[0])
+        source = next(
+            (
+                candidate
+                for clerk_user_id in source_ids
+                if (candidate := self.users.get_by_clerk_id(clerk_user_id)) is not None
+                and candidate.id != target.id
+            ),
+            None,
+        )
+        if source is None:
+            return target.clerk_user_id
+
+        source_subscription = self.repo.get_subscription(source.id)
+        if source_subscription is None:
+            return target.clerk_user_id
+        target_subscription = self.repo.get_or_create_subscription(target.id)
+
+        period_start = source_subscription.current_period_started_at
+        period_end = source_subscription.current_period_ends_at
+        if period_start is not None and period_end is not None:
+            remaining = self.usage.included_period_balance(
+                source.id, period_start, period_end
+            )
+            incoming_source = f"revenuecat-transfer:{event_id}:in"
+            if remaining > 0 and not self.usage.has_source_event(incoming_source):
+                self.usage.add_event(
+                    UsageEvent(
+                        user_id=source.id,
+                        kind=UsageEventKind.INCLUDED_DEBIT,
+                        amount=-remaining,
+                        source_event_id=f"revenuecat-transfer:{event_id}:out",
+                        period_started_at=period_start,
+                        period_ends_at=period_end,
+                    )
+                )
+                self.usage.add_event(
+                    UsageEvent(
+                        user_id=target.id,
+                        kind=UsageEventKind.INCLUDED_CREDIT,
+                        amount=remaining,
+                        source_event_id=incoming_source,
+                        period_started_at=period_start,
+                        period_ends_at=period_end,
+                    )
+                )
+
+        target_subscription.plan = source_subscription.plan
+        target_subscription.status = source_subscription.status
+        target_subscription.product_id = source_subscription.product_id
+        target_subscription.current_period_started_at = period_start
+        target_subscription.current_period_ends_at = period_end
+        target_subscription.will_renew = source_subscription.will_renew
+        target_subscription.environment = source_subscription.environment
+        source_subscription.status = SubscriptionStatus.INACTIVE
+        source_subscription.will_renew = False
+        return target.clerk_user_id
 
     def verify_webhook(
         self,
@@ -169,9 +301,13 @@ class BillingService:
             raise DealUpError("INVALID_WEBHOOK", "Événement RevenueCat invalide.", 422)
         if self.repo.event_exists(event_id):
             return
-        app_user_id = next(iter(_revenuecat_user_ids(event)), None)
+        app_user_id = (
+            self._process_transfer(event, event_id)
+            if event_type == "TRANSFER"
+            else next(iter(_revenuecat_user_ids(event)), None)
+        )
         user: User | None = None
-        if app_user_id:
+        if app_user_id and event_type != "TRANSFER":
             user, _ = self.users.get_or_create(app_user_id)
 
         product_id = event.get("product_id")
@@ -228,12 +364,10 @@ class BillingService:
             subscription.plan = plan
             subscription.product_id = str(product_id)
             subscription.current_period_started_at = (
-                purchased_at
-                or subscription.current_period_started_at
+                purchased_at or subscription.current_period_started_at
             )
             subscription.current_period_ends_at = (
-                expires_at
-                or subscription.current_period_ends_at
+                expires_at or subscription.current_period_ends_at
             )
             subscription.environment = event.get("environment")
             if event_type == "EXPIRATION":
@@ -296,19 +430,41 @@ class BillingService:
             for transaction in topup_transactions:
                 if not isinstance(transaction, dict):
                     continue
-                transaction_id = transaction.get("id") or transaction.get(
-                    "transaction_id"
-                )
-                if not isinstance(transaction_id, str) or not transaction_id:
+                transaction_ids = _transaction_ids(transaction)
+                if not transaction_ids:
                     continue
-                source_id = f"revenuecat-transaction:{transaction_id}"
-                if not self.usage.has_source_event(source_id):
+                source_ids = [
+                    f"revenuecat-transaction:{transaction_id}"
+                    for transaction_id in transaction_ids
+                ]
+                source_id = source_ids[0]
+                existing_credits = [
+                    event
+                    for event in self.usage.source_events(user.id, source_ids)
+                    if event.kind == UsageEventKind.TOPUP_CREDIT
+                ]
+                if not existing_credits:
                     self.usage.add_event(
                         UsageEvent(
                             user_id=user.id,
                             kind=UsageEventKind.TOPUP_CREDIT,
                             amount=amount,
                             source_event_id=source_id,
+                        )
+                    )
+                    continue
+
+                duplicate_count = len(existing_credits) - 1
+                deduplication_source = f"revenuecat-dedup:{transaction_ids[0]}"
+                if duplicate_count > 0 and not self.usage.has_source_event(
+                    deduplication_source
+                ):
+                    self.usage.add_event(
+                        UsageEvent(
+                            user_id=user.id,
+                            kind=UsageEventKind.TOPUP_DEBIT,
+                            amount=-(amount * duplicate_count),
+                            source_event_id=deduplication_source,
                         )
                     )
         subscription = self.repo.get_or_create_subscription(user.id)

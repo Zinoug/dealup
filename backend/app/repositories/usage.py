@@ -33,6 +33,25 @@ class UsageRepository:
         )
         return abs(int(value or 0))
 
+    def included_period_balance(
+        self, user_id: str, period_start: datetime, period_end: datetime
+    ) -> int:
+        value = self.session.scalar(
+            select(func.coalesce(func.sum(UsageEvent.amount), 0)).where(
+                UsageEvent.user_id == user_id,
+                UsageEvent.kind.in_(
+                    [
+                        UsageEventKind.INCLUDED_CREDIT,
+                        UsageEventKind.INCLUDED_DEBIT,
+                        UsageEventKind.FAILURE_REVERSAL,
+                    ]
+                ),
+                UsageEvent.period_started_at == period_start,
+                UsageEvent.period_ends_at == period_end,
+            )
+        )
+        return max(0, int(value or 0))
+
     def included_balance(self, user_id: str) -> int:
         first_credit = (
             select(func.min(UsageEvent.created_at))
@@ -89,13 +108,25 @@ class UsageRepository:
         return event
 
     def has_source_event(self, source_event_id: str) -> bool:
-        return (
-            self.session.scalar(
-                select(UsageEvent.id).where(
-                    UsageEvent.source_event_id == source_event_id
+        return self.get_source_event(source_event_id) is not None
+
+    def get_source_event(self, source_event_id: str) -> UsageEvent | None:
+        return self.session.scalar(
+            select(UsageEvent).where(UsageEvent.source_event_id == source_event_id)
+        )
+
+    def source_events(
+        self, user_id: str, source_event_ids: list[str]
+    ) -> list[UsageEvent]:
+        if not source_event_ids:
+            return []
+        return list(
+            self.session.scalars(
+                select(UsageEvent).where(
+                    UsageEvent.user_id == user_id,
+                    UsageEvent.source_event_id.in_(source_event_ids),
                 )
             )
-            is not None
         )
 
     def has_reversal(self, analysis_id: str) -> bool:

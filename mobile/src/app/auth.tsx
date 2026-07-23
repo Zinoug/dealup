@@ -13,7 +13,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -26,6 +25,7 @@ import {
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
 
 import { EntryBrand, EntryPrimaryButton, EntryScreen } from '@/components/entry-ui';
+import { externalLinks, openExternalLink } from '@/services/external-links';
 import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors } from '@/theme/tokens';
@@ -142,6 +142,13 @@ export default function AuthScreen() {
 
   const showError = (reason: unknown) => {
     setToast(clerkMessage(reason));
+  };
+
+  const openLegalLink = async (url: string) => {
+    const opened = await openExternalLink(url);
+    if (!opened) {
+      setToast('Impossible d’ouvrir cette page. Réessaie dans quelques instants.');
+    }
   };
 
   const continueWithEmail = () => {
@@ -514,9 +521,9 @@ export default function AuthScreen() {
               {register ? (
                 <Text style={styles.legalCopy}>
                   En créant un compte, tu acceptes nos{' '}
-                  <Text onPress={() => void Linking.openURL('https://joindealup.com/conditions/')} style={styles.legalLink}>Conditions d’utilisation</Text>
+                  <Text onPress={() => void openLegalLink(externalLinks.terms)} style={styles.legalLink}>Conditions d’utilisation</Text>
                   {' '}et notre{' '}
-                  <Text onPress={() => void Linking.openURL('https://joindealup.com/confidentialite/')} style={styles.legalLink}>Politique de confidentialité</Text>.
+                  <Text onPress={() => void openLegalLink(externalLinks.privacy)} style={styles.legalLink}>Politique de confidentialité</Text>.
                 </Text>
               ) : null}
             </>
