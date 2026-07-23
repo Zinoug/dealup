@@ -1,7 +1,9 @@
+from datetime import timezone
+
 from app.db.session import session_factory
 from app.api.dependencies import revenuecat_dependency
 from app.core.config import get_settings
-from app.models import UsageEvent, UsageEventKind
+from app.models import Subscription, SubscriptionStatus, UsageEvent, UsageEventKind
 
 
 class FakeRevenueCat:
@@ -183,3 +185,189 @@ def test_revenuecat_promotional_webhook_grants_15_credits(client) -> None:
     usage = client.get("/v1/me/usage").json()
     assert usage["plan"] == "promotional"
     assert usage["included"]["remaining"] == 15
+
+
+def test_revenuecat_cancellation_keeps_access_without_extra_credit(client) -> None:
+    client.get("/v1/me")
+    initial = {
+        "api_version": "1.0",
+        "event": {
+            "id": "subscription-initial-1",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "user_local_dealup",
+            "product_id": get_settings().revenuecat_weekly_product_id,
+            "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+            "purchased_at_ms": 1784734283249,
+            "expiration_at_ms": 1785339083249,
+        },
+    }
+    cancellation = {
+        "api_version": "1.0",
+        "event": {
+            **initial["event"],
+            "id": "subscription-cancel-1",
+            "type": "CANCELLATION",
+        },
+    }
+
+    assert client.post("/v1/webhooks/revenuecat", json=initial).status_code == 200
+    assert client.post("/v1/webhooks/revenuecat", json=cancellation).status_code == 200
+    usage = client.get("/v1/me/usage").json()
+    assert usage["entitlement"] == "active"
+    assert usage["included"]["remaining"] == 15
+    with session_factory()() as session:
+        credits = (
+            session.query(UsageEvent)
+            .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+            .all()
+        )
+        subscription = session.query(Subscription).one()
+        assert len(credits) == 1
+        assert subscription.status == SubscriptionStatus.ACTIVE
+        assert subscription.will_renew is False
+
+
+def test_revenuecat_uncancellation_restores_renewal_without_extra_credit(client) -> None:
+    client.get("/v1/me")
+    base_event = {
+        "app_user_id": "user_local_dealup",
+        "product_id": get_settings().revenuecat_weekly_product_id,
+        "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+        "purchased_at_ms": 1784734283249,
+        "expiration_at_ms": 1785339083249,
+    }
+    for event_id, event_type in [
+        ("subscription-initial-2", "INITIAL_PURCHASE"),
+        ("subscription-cancel-2", "CANCELLATION"),
+        ("subscription-uncancel-2", "UNCANCELLATION"),
+    ]:
+        response = client.post(
+            "/v1/webhooks/revenuecat",
+            json={"api_version": "1.0", "event": {**base_event, "id": event_id, "type": event_type}},
+        )
+        assert response.status_code == 200, response.text
+
+    with session_factory()() as session:
+        credits = (
+            session.query(UsageEvent)
+            .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+            .all()
+        )
+        subscription = session.query(Subscription).one()
+        assert len(credits) == 1
+        assert subscription.status == SubscriptionStatus.ACTIVE
+        assert subscription.will_renew is True
+
+
+def test_revenuecat_subscription_extension_updates_period_without_credit(client) -> None:
+    client.get("/v1/me")
+    initial = {
+        "api_version": "1.0",
+        "event": {
+            "id": "subscription-initial-3",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "user_local_dealup",
+            "product_id": get_settings().revenuecat_weekly_product_id,
+            "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+            "purchased_at_ms": 1784734283249,
+            "expiration_at_ms": 1785339083249,
+        },
+    }
+    extended = {
+        "api_version": "1.0",
+        "event": {
+            **initial["event"],
+            "id": "subscription-extended-3",
+            "type": "SUBSCRIPTION_EXTENDED",
+            "expiration_at_ms": 1785943883249,
+        },
+    }
+
+    assert client.post("/v1/webhooks/revenuecat", json=initial).status_code == 200
+    assert client.post("/v1/webhooks/revenuecat", json=extended).status_code == 200
+    with session_factory()() as session:
+        credits = (
+            session.query(UsageEvent)
+            .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+            .all()
+        )
+        subscription = session.query(Subscription).one()
+        assert len(credits) == 1
+        ends_at = subscription.current_period_ends_at
+        if ends_at.tzinfo is None:
+            ends_at = ends_at.replace(tzinfo=timezone.utc)
+        assert int(ends_at.timestamp()) == 1785943883
+
+
+def test_revenuecat_product_change_does_not_grant_ambiguous_extra_credit(client) -> None:
+    client.get("/v1/me")
+    initial = {
+        "api_version": "1.0",
+        "event": {
+            "id": "subscription-initial-4",
+            "type": "INITIAL_PURCHASE",
+            "app_user_id": "user_local_dealup",
+            "product_id": get_settings().revenuecat_weekly_product_id,
+            "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+            "purchased_at_ms": 1784734283249,
+            "expiration_at_ms": 1785339083249,
+        },
+    }
+    product_change = {
+        "api_version": "1.0",
+        "event": {
+            **initial["event"],
+            "id": "subscription-product-change-4",
+            "type": "PRODUCT_CHANGE",
+            "product_id": get_settings().revenuecat_monthly_product_id,
+            "purchased_at_ms": 1784740000000,
+            "expiration_at_ms": 1787418400000,
+        },
+    }
+
+    assert client.post("/v1/webhooks/revenuecat", json=initial).status_code == 200
+    assert client.post("/v1/webhooks/revenuecat", json=product_change).status_code == 200
+    usage = client.get("/v1/me/usage").json()
+    assert usage["plan"] == "monthly"
+    assert usage["included"]["remaining"] == 15
+    with session_factory()() as session:
+        credits = (
+            session.query(UsageEvent)
+            .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+            .all()
+        )
+        assert len(credits) == 1
+
+
+def test_revenuecat_temporary_entitlement_grant_credits_once(client) -> None:
+    client.get("/v1/me")
+    payload = {
+        "api_version": "1.0",
+        "event": {
+            "id": "temporary-entitlement-1",
+            "type": "TEMPORARY_ENTITLEMENT_GRANT",
+            "store": "PROMOTIONAL",
+            "period_type": "PROMOTIONAL",
+            "app_user_id": "$RCAnonymousID:anonymous",
+            "aliases": ["$RCAnonymousID:anonymous", "user_local_dealup"],
+            "product_id": "rc_promo_DealUp AI Pro_temporary",
+            "entitlement_ids": [get_settings().revenuecat_entitlement_id],
+            "purchased_at_ms": 1784734283249,
+            "expiration_at_ms": 1784820683249,
+        },
+    }
+
+    first = client.post("/v1/webhooks/revenuecat", json=payload)
+    second = client.post("/v1/webhooks/revenuecat", json=payload)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    usage = client.get("/v1/me/usage").json()
+    assert usage["plan"] == "promotional"
+    assert usage["included"]["remaining"] == 15
+    with session_factory()() as session:
+        credits = (
+            session.query(UsageEvent)
+            .filter_by(kind=UsageEventKind.INCLUDED_CREDIT)
+            .all()
+        )
+        assert len(credits) == 1

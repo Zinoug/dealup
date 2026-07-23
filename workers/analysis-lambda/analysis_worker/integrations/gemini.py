@@ -104,7 +104,8 @@ Règles de sortie :
 - Codes d'informations manquantes autorisés : {missing}. priority : BLOCKING ou USEFUL. Maximum 4.
 - Chaque information manquante doit être propre à cette annonce : label décrit le point concret, reason explique en une phrase pourquoi les éléments fournis ne suffisent pas, question cite si utile le modèle ou la déclaration du vendeur, et evidence contient les références qui ont déclenché la demande. N'ajoute pas une facture, un IMEI, une batterie ou un verrouillage par automatisme si une preuve exploitable est déjà visible.
 - Les messages vendeur font 700 caractères maximum, restent polis et ne demandent jamais un IMEI complet : seulement un numéro partiellement masqué.
-- changes est vide pour une première analyse et contient au maximum 4 changements pour une réanalyse.
+- changes est vide pour une première analyse et contient au maximum 4 changements pour une réanalyse. Chaque phrase de changes est destinée à l’interface utilisateur : français naturel, clair, sans code interne, sans nom de champ, sans identifiant en majuscules, sans parenthèse technique. Bon exemple : "La facture envoyée rend la preuve d’achat plus crédible." Mauvais exemple : "OWNERSHIP_PROOF_UNVERIFIED a été résolu."
+- Tous les textes affichables à l’utilisateur (headline, summary, scores.reason, risks.title, risks.comment, risks.check, missing_information.*, action_reason, messages.*, changes) ne doivent jamais contenir de code métier comme OWNERSHIP_PROOF_UNVERIFIED, PAYMENT_OUTSIDE_PLATFORM, PROOF_OF_PURCHASE, CHECK_IMEI ou tout autre identifiant technique. Utilise des mots humains.
 - N'ajoute aucune clé métier, aucun verdict, aucune checklist et aucune identité d'appareil au JSON.
 
 Règles de preuve visuelle :
@@ -304,6 +305,10 @@ def build_natural_prompt(
                 for item in risk_items[:5]
                 if isinstance(item, dict)
             ),
+        )
+        lines.append(
+            "Important : ces codes précédents servent uniquement au raisonnement. "
+            "Ne les répète jamais dans les textes destinés à l’utilisateur, notamment changes."
         )
 
     if listing_image_count:

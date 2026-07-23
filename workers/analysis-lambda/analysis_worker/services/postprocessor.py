@@ -35,6 +35,12 @@ SENSITIVE_TERMS = {
     "origine ethnique",
     "religion",
 }
+INTERNAL_CODE_RE = re.compile(
+    r"\b(?!(?:PHOTO|SELLER_MEDIA)_\d+\b)[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\b"
+)
+PARENTHESIZED_INTERNAL_CODE_RE = re.compile(
+    r"\s*\((?!(?:PHOTO|SELLER_MEDIA)_\d+\b)[A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)+\)"
+)
 
 CONFIDENCES = {"LOW", "MEDIUM", "HIGH"}
 STATUSES = {"CONFIRMED", "LIKELY", "UNVERIFIED", "RESOLVED"}
@@ -114,6 +120,32 @@ def _contains_sensitive_text(*values: Any) -> bool:
 def _text(value: Any, fallback: str, limit: int) -> str:
     result = value.strip() if isinstance(value, str) else ""
     return (result or fallback)[:limit]
+
+
+def _public_text(value: Any, fallback: str, limit: int) -> str:
+    """Return UI copy without leaking internal enum/taxonomy codes.
+
+    This does not invent replacement copy. It only removes parenthesized codes
+    and falls back when a standalone code remains.
+    """
+    result = _text(value, fallback, limit)
+    result = PARENTHESIZED_INTERNAL_CODE_RE.sub("", result)
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    if INTERNAL_CODE_RE.search(result):
+        return fallback[:limit]
+    return (result or fallback)[:limit]
+
+
+def _change_text(value: Any, limit: int = 300) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    if _contains_sensitive_text(value):
+        return None
+    result = PARENTHESIZED_INTERNAL_CODE_RE.sub("", value.strip())
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    if not result or INTERNAL_CODE_RE.search(result):
+        return None
+    return result[:limit]
 
 
 def _integer(value: Any, default: int = 0) -> int:
@@ -309,8 +341,10 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     """Make Gemini output safe and tolerant before internal persistence."""
     raw = deepcopy(candidate)
     dropped = 0
-    headline = _text(raw.get("headline"), "Analyse de l’annonce à vérifier", 90)
-    summary = _text(
+    headline = _public_text(
+        raw.get("headline"), "Analyse de l’annonce à vérifier", 90
+    )
+    summary = _public_text(
         raw.get("summary"),
         "Les éléments disponibles nécessitent encore quelques vérifications.",
         450,
@@ -327,7 +361,7 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     for key in SCORE_KEYS:
         item = raw_scores.get(key)
         item = item if isinstance(item, dict) else {"value": item}
-        reason = _text(
+        reason = _public_text(
             item.get("reason"),
             "Sous-score fondé sur les éléments disponibles.",
             320,
@@ -341,13 +375,13 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     for item in raw.get("risks") or []:
         if not isinstance(item, dict) or len(risks) >= 5:
             continue
-        title = _text(item.get("title"), "Point à vérifier", 80)
-        comment = _text(
+        title = _public_text(item.get("title"), "Point à vérifier", 80)
+        comment = _public_text(
             item.get("comment"),
             "Les éléments disponibles ne permettent pas encore de confirmer ce point.",
             320,
         )
-        check = _text(
+        check = _public_text(
             item.get("check"), "Demander une preuve claire avant le paiement.", 220
         )
         if _contains_sensitive_text(title, comment, check):
@@ -379,7 +413,7 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     for item in raw.get("positive_signals") or []:
         if not isinstance(item, dict) or len(positives) >= 4:
             continue
-        label = _text(item.get("label"), "Signal positif observé", 300)
+        label = _public_text(item.get("label"), "Signal positif observé", 300)
         if _contains_sensitive_text(label):
             dropped += 1
             continue
@@ -391,13 +425,15 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     for item in raw.get("missing_information") or []:
         if not isinstance(item, dict) or len(missing) >= 4:
             continue
-        label = _text(item.get("label"), "Information manquante", 300)
-        reason = _text(
+        label = _public_text(item.get("label"), "Information manquante", 300)
+        reason = _public_text(
             item.get("reason"),
             "Les éléments fournis ne permettent pas encore de confirmer ce point.",
             320,
         )
-        question = _text(item.get("question"), "Pouvez-vous préciser ce point ?", 500)
+        question = _public_text(
+            item.get("question"), "Pouvez-vous préciser ce point ?", 500
+        )
         if _contains_sensitive_text(label, reason, question):
             dropped += 1
             continue
@@ -423,7 +459,7 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
         )
 
     raw_pricing = raw.get("pricing") if isinstance(raw.get("pricing"), dict) else {}
-    pricing_comment = _text(
+    pricing_comment = _public_text(
         raw_pricing.get("comment"),
         "Estimation fondée sur la configuration et le marché observé.",
         300,
@@ -434,12 +470,12 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
     pricing = {**raw_pricing, "comment": pricing_comment}
 
     raw_messages = raw.get("messages") if isinstance(raw.get("messages"), dict) else {}
-    request_proofs = _text(
+    request_proofs = _public_text(
         raw_messages.get("request_proofs"),
         "Bonjour, pouvez-vous transmettre les preuves manquantes en masquant vos données privées ?",
         700,
     )
-    make_offer = _text(
+    make_offer = _public_text(
         raw_messages.get("make_offer"),
         "Bonjour, sous réserve des vérifications, je souhaite vous faire une offre.",
         700,
@@ -454,11 +490,11 @@ def sanitize_candidate(candidate: dict[str, Any]) -> tuple[dict[str, Any], int]:
         dropped += 1
 
     changes = [
-        _text(item, "", 300)
-        for item in raw.get("changes") or []
-        if isinstance(item, str) and item.strip() and not _contains_sensitive_text(item)
+        item
+        for item in (_change_text(item) for item in raw.get("changes") or [])
+        if item
     ][:4]
-    action_reason = _text(
+    action_reason = _public_text(
         raw.get("action_reason"),
         "Cette action est la plus utile avant de poursuivre.",
         300,
@@ -560,7 +596,7 @@ def _pricing(
             **prices,
             "potential_savings_cents": max(int(asking or 0) - agreement_midpoint, 0),
             "confidence": _enum(value.get("confidence"), CONFIDENCES, "MEDIUM"),
-            "commentary": _text(
+            "commentary": _public_text(
                 value.get("comment"),
                 "Estimation fondée sur la configuration et le marché observé.",
                 300,

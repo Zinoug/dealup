@@ -81,6 +81,51 @@ def test_sensitive_inference_is_removed_from_internal_candidate_too() -> None:
     assert "musulman" not in sanitized["summary"]
 
 
+def test_internal_codes_do_not_leak_to_public_change_summary() -> None:
+    candidate = candidate_payload()
+    candidate["changes"] = [
+        "Le risque d'absence de preuve d'achat (OWNERSHIP_PROOF_UNVERIFIED) a été marqué comme résolu.",
+        "PAYMENT_OUTSIDE_PLATFORM est moins probable.",
+        "La réponse du vendeur rend la facture plus crédible.",
+    ]
+
+    sanitized, _ = sanitize_candidate(candidate)
+    processed = build_report(
+        sanitized,
+        normalized_listing=normalized_listing(),
+        device_profile=device_profile(),
+        purchase_mode="delivery",
+    )
+
+    changes = processed.result.change_summary
+    assert changes == [
+        "Le risque d'absence de preuve d'achat a été marqué comme résolu.",
+        "La réponse du vendeur rend la facture plus crédible.",
+    ]
+    assert "OWNERSHIP_PROOF_UNVERIFIED" not in " ".join(changes)
+    assert "PAYMENT_OUTSIDE_PLATFORM" not in " ".join(changes)
+
+
+def test_internal_codes_do_not_leak_to_public_copy() -> None:
+    candidate = candidate_payload(risk_code="OWNERSHIP_PROOF_UNVERIFIED")
+    candidate["headline"] = "OWNERSHIP_PROOF_UNVERIFIED résolu"
+    candidate["risks"][0]["comment"] = (
+        "La preuve envoyée couvre ce point (OWNERSHIP_PROOF_UNVERIFIED)."
+    )
+
+    sanitized, _ = sanitize_candidate(candidate)
+    processed = build_report(
+        sanitized,
+        normalized_listing=normalized_listing(),
+        device_profile=device_profile(),
+        purchase_mode="delivery",
+    )
+
+    assert processed.result.verdict["headline"] == "Analyse de l’annonce à vérifier"
+    risk_commentary = processed.result.risks["items"][0]["commentary"]
+    assert "OWNERSHIP_PROOF_UNVERIFIED" not in risk_commentary
+
+
 def test_invalid_pricing_keeps_report_and_caps_verdict() -> None:
     processed = build_report(
         candidate_payload(score=95, invalid_pricing=True),

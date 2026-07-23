@@ -20,6 +20,23 @@ from app.repositories import BillingRepository, UsageRepository, UserRepository
 from app.schemas.api import BillingSyncResponse
 from app.services.usage import UsageService
 
+SUBSCRIPTION_CREDIT_EVENTS = {
+    "INITIAL_PURCHASE",
+    "RENEWAL",
+    "NON_RENEWING_PURCHASE",
+    "TEMPORARY_ENTITLEMENT_GRANT",
+}
+TOPUP_CREDIT_EVENTS = {"INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"}
+ACTIVE_SUBSCRIPTION_EVENTS = {
+    "INITIAL_PURCHASE",
+    "RENEWAL",
+    "NON_RENEWING_PURCHASE",
+    "PRODUCT_CHANGE",
+    "SUBSCRIPTION_EXTENDED",
+    "UNCANCELLATION",
+    "TEMPORARY_ENTITLEMENT_GRANT",
+}
+
 
 def _from_ms(value: Any) -> datetime | None:
     if not isinstance(value, (int, float)):
@@ -34,6 +51,25 @@ def _from_iso(value: Any) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _revenuecat_user_ids(event: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("app_user_id", "original_app_user_id"):
+        value = event.get(key)
+        if isinstance(value, str) and value:
+            values.append(value)
+    aliases = event.get("aliases")
+    if isinstance(aliases, list):
+        values.extend(value for value in aliases if isinstance(value, str) and value)
+
+    result: list[str] = []
+    for value in values:
+        if value.startswith("$RCAnonymousID:"):
+            continue
+        if value not in result:
+            result.append(value)
+    return result
 
 
 class BillingService:
@@ -133,9 +169,9 @@ class BillingService:
             raise DealUpError("INVALID_WEBHOOK", "Événement RevenueCat invalide.", 422)
         if self.repo.event_exists(event_id):
             return
-        app_user_id = event.get("app_user_id") or event.get("original_app_user_id")
+        app_user_id = next(iter(_revenuecat_user_ids(event)), None)
         user: User | None = None
-        if isinstance(app_user_id, str) and app_user_id:
+        if app_user_id:
             user, _ = self.users.get_or_create(app_user_id)
 
         product_id = event.get("product_id")
@@ -151,7 +187,7 @@ class BillingService:
         if (
             user
             and topup_amount is not None
-            and event_type in {"INITIAL_PURCHASE", "NON_RENEWING_PURCHASE"}
+            and event_type in TOPUP_CREDIT_EVENTS
             and not self.usage.has_source_event(topup_source_id)
         ):
             self.usage.add_event(
@@ -181,12 +217,7 @@ class BillingService:
             subscription = self.repo.get_or_create_subscription(user.id)
             purchased_at = _from_ms(event.get("purchased_at_ms"))
             expires_at = _from_ms(event.get("expiration_at_ms"))
-            if event_type in {
-                "INITIAL_PURCHASE",
-                "RENEWAL",
-                "PRODUCT_CHANGE",
-                "NON_RENEWING_PURCHASE",
-            }:
+            if event_type in SUBSCRIPTION_CREDIT_EVENTS:
                 self._grant_subscription_credit(
                     user,
                     plan,
@@ -214,12 +245,17 @@ class BillingService:
             elif event_type == "BILLING_ISSUE":
                 subscription.status = SubscriptionStatus.GRACE_PERIOD
                 subscription.will_renew = False
-            else:
+            elif event_type == "SUBSCRIPTION_PAUSED":
+                subscription.status = SubscriptionStatus.INACTIVE
+                subscription.will_renew = False
+            elif event_type == "UNCANCELLATION":
                 subscription.status = SubscriptionStatus.ACTIVE
-                subscription.will_renew = (
-                    plan != SubscriptionPlan.PROMOTIONAL
-                    and event_type not in {"CANCELLATION", "EXPIRATION"}
-                )
+                subscription.will_renew = plan != SubscriptionPlan.PROMOTIONAL
+            elif event_type in ACTIVE_SUBSCRIPTION_EVENTS:
+                subscription.status = SubscriptionStatus.ACTIVE
+                subscription.will_renew = plan != SubscriptionPlan.PROMOTIONAL
+            else:
+                subscription.status = subscription.status or SubscriptionStatus.ACTIVE
 
         self.repo.add_event(
             RevenueCatEvent(
