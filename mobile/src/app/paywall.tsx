@@ -10,7 +10,7 @@ import { telemetry } from '@/services/telemetry';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, type } from '@/theme/tokens';
 import type { PlanId } from '@/types/domain';
-import { formatMonthlyPricePerWeek } from '@/utils/pricing';
+import { formatBillingPrice, formatMonthlyPricePerWeek } from '@/utils/pricing';
 
 export default function PaywallScreen() {
   const { height, fontScale } = useWindowDimensions();
@@ -87,8 +87,8 @@ export default function PaywallScreen() {
         </View>
 
         <View style={[styles.plans, compactDevice && styles.plansCompact]}>
-          <Plan compact={compactDevice} id="monthly" selected={selectedPlan === 'monthly'} onPress={choosePlan} title="Mensuel" price={monthly ? `${formatMonthlyPricePerWeek(monthly.price, monthly.currencyCode)} / semaine` : 'Chargement du prix…'} billing={monthly ? `Facturé ${monthly.priceString} par mois` : 'Prix App Store indisponible'} quota="60 nouvelles annonces par mois" badge="Le plus populaire" />
-          <Plan compact={compactDevice} id="weekly" selected={selectedPlan === 'weekly'} onPress={choosePlan} title="Hebdomadaire" price={weekly ? `${weekly.priceString} / semaine` : 'Chargement du prix…'} billing="Facturé chaque semaine" quota="15 nouvelles annonces par semaine" />
+          <Plan compact={compactDevice} id="monthly" selected={selectedPlan === 'monthly'} onPress={choosePlan} title="Mensuel" price={monthly ? `${formatMonthlyPricePerWeek(monthly.price, monthly.currencyCode)} / semaine` : 'Chargement du prix…'} billing={monthly ? `Facturé ${formatBillingPrice(monthly.price, monthly.currencyCode)} par mois` : 'Prix App Store indisponible'} quota="60 nouvelles annonces par mois" badge="Le plus populaire" />
+          <Plan compact={compactDevice} id="weekly" selected={selectedPlan === 'weekly'} onPress={choosePlan} title="Hebdomadaire" price={weekly ? `${formatBillingPrice(weekly.price, weekly.currencyCode)} / semaine` : 'Chargement du prix…'} billing="Facturé chaque semaine" quota="15 nouvelles annonces par semaine" />
         </View>
 
         <LimeButton label={isBusy ? 'Activation…' : 'Continuer'} onPress={() => void buy()} style={styles.cta} />

@@ -482,20 +482,37 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
       const previousBalance = usage.topUpRemaining;
       telemetry.capture('purchase_started', { product_type: 'top_up', quantity });
       await revenueCat.purchaseTopUp(userId, quantity);
-      let synchronizedUsage: Usage | null = null;
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        await dealupApi.syncBilling();
-        synchronizedUsage = await dealupApi.getUsage();
-        setUsage(synchronizedUsage);
-        if (synchronizedUsage.topUpRemaining >= previousBalance + quantity) break;
-        await new Promise((resolve) => setTimeout(resolve, 650 * (attempt + 1)));
-      }
-      if (!synchronizedUsage || synchronizedUsage.topUpRemaining < previousBalance + quantity) {
-        setError('Ton achat est validé. Le solde est encore en cours de synchronisation. Réessaie dans un instant.');
-        telemetry.capture('topup_sync_pending', { quantity });
-        return false;
-      }
       telemetry.capture('topup_purchased', { quantity });
+
+      let synchronizedUsage: Usage | null = null;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+          await dealupApi.syncBilling();
+          synchronizedUsage = await dealupApi.getUsage();
+          setUsage(synchronizedUsage);
+          if (synchronizedUsage.topUpRemaining >= previousBalance + quantity) {
+            return true;
+          }
+        } catch (reason) {
+          telemetry.error(reason, {
+            operation: 'sync_topup_after_purchase',
+            quantity,
+            attempt: attempt + 1,
+          });
+        }
+        if (attempt < 5) {
+          await new Promise((resolve) => setTimeout(resolve, 700 * (attempt + 1)));
+        }
+      }
+
+      // StoreKit has already confirmed the purchase. A delayed RevenueCat webhook
+      // must not turn that success into a visible purchase error. The next account
+      // refresh reconciles the transaction idempotently with the backend.
+      telemetry.capture('topup_sync_pending', {
+        quantity,
+        observed_balance: synchronizedUsage?.topUpRemaining ?? previousBalance,
+      });
+      void refreshAccount();
       return true;
     } catch (reason) {
       const message = errorMessage(reason, 'Le pack n’a pas pu être ajouté.');
@@ -510,7 +527,7 @@ export function AppStoreProvider({ children }: PropsWithChildren) {
     } finally {
       setIsBusy(false);
     }
-  }, [usage.topUpRemaining, userId]);
+  }, [refreshAccount, usage.topUpRemaining, userId]);
 
   const setSellerContext = useCallback((contacted: boolean, reply = '', mediaUris: string[] = []) => {
     setAlreadyContacted(contacted);

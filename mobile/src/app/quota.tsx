@@ -8,6 +8,7 @@ import { externalLinks, openExternalLink } from '@/services/external-links';
 import type { TopUpQuantity } from '@/services/revenuecat';
 import { useAppStore } from '@/store/app-store';
 import { colors, layout, radii, spacing, type } from '@/theme/tokens';
+import { formatBillingPrice } from '@/utils/pricing';
 
 export default function QuotaScreen() {
   const { height, fontScale } = useWindowDimensions();
@@ -35,13 +36,13 @@ export default function QuotaScreen() {
         <GlassCard style={[styles.card, compact && styles.cardCompact]}>
           <View accessibilityRole="radiogroup" style={styles.selector}>
             <PackChoice
-              price={billingProducts.topUp15?.priceString ?? '—'}
+              price={billingProducts.topUp15 ? formatBillingPrice(billingProducts.topUp15.price, billingProducts.topUp15.currencyCode) : '—'}
               quantity={15}
               selected={selected === 15}
               onPress={() => setSelected(15)}
             />
             <PackChoice
-              price={billingProducts.topUp40?.priceString ?? '—'}
+              price={billingProducts.topUp40 ? formatBillingPrice(billingProducts.topUp40.price, billingProducts.topUp40.currencyCode) : '—'}
               quantity={40}
               selected={selected === 40}
               recommended
@@ -55,7 +56,7 @@ export default function QuotaScreen() {
               <Text style={styles.summaryLabel}>analyses disponibles</Text>
             </View>
             <View style={styles.summaryPrice}>
-              <Text style={styles.price}>{selectedProduct?.priceString ?? '—'}</Text>
+              <Text style={styles.price}>{selectedProduct ? formatBillingPrice(selectedProduct.price, selectedProduct.currencyCode) : '—'}</Text>
               <Text style={styles.priceDetail}>paiement unique</Text>
             </View>
           </View>
